@@ -15,7 +15,7 @@ build/
 .env.test.local
 .env.production.local
 
-# database
+# database (SQLite local)
 prisma/dev.db
 prisma/dev.db-journal
 prisma/*.db
