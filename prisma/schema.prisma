@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = env("DATABASE_PROVIDER")
+  url      = env("DATABASE_URL")
+}
+
+model PessoaFiscal {
+  id                 String   @id @default(cuid())
+  nomeRazaoSocial    String?
+  nomeFantasia       String?
+  cpfCnpj            String?
+  endereco           String?
+  numero             String?
+  complemento        String?
+  bairro             String?
+  cep                String?
+  municipio          String?
+  uf                 String?
+  email              String?
+  telefone           String?
+  celular            String?
+  inscricaoMunicipal String?
+  inscricaoEstadual  String?
+  site               String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  notasComoPrestador NotaFiscal[] @relation("Prestador")
+  notasComoTomador   NotaFiscal[] @relation("Tomador")
+}
+
+model NotaFiscal {
+  id                            String    @id @default(cuid())
+  nomeOrganizador               String?
+  tipo                          String?
+  numeroNf                      String?
+  numeroRps                     String?
+  codigoVerificacao             String?
+  of                            String?
+  descricao                     String?
+  dataEmissao                   DateTime?
+  dataFatoGerador               DateTime?
+  dataVencimento                DateTime?
+  dataRecebimento               DateTime?
+  status                        String    @default("rascunho")
+  valorBruto                    Float?
+  valorLiquido                  Float?
+  aliquota                      Float?
+  valorIss                      Float?
+  baseCalculo                   Float?
+  valorLiquidoAntecipacao       Float?
+  valorTotalTributosAntecipacao Float?
+  ir                            Float?
+  pisPasep                      Float?
+  cofins                        Float?
+  inss                          Float?
+  csll                          Float?
+  outrasRetencoes               Float?
+  valorAproximadoTributos       Float?
+  naturezaOperacao              String?
+  situacaoTributariaIssqn       String?
+  localPrestacao                String?
+  situacaoNfse                  String?
+  observacoesFiscais            String?
+  regimeTributario              String?
+  indicacaoRetencao             String?
+  observacoesAutenticidade      String?
+  municipioEmissor              String?
+  codigoServico                 String?
+  quantidade                    Float?
+  valorUnitario                 Float?
+  observacoes                   String?
+  arquivoPdfUrl                 String?
+  tags                          String?
+  prestadorId                   String?
+  tomadorId                     String?
+  notaSubstitutivaId            String?
+
+  prestador          PessoaFiscal?      @relation("Prestador", fields: [prestadorId], references: [id])
+  tomador            PessoaFiscal?      @relation("Tomador", fields: [tomadorId], references: [id])
+  notaSubstitutiva   NotaFiscal?        @relation("Substituicao", fields: [notaSubstitutivaId], references: [id])
+  notasSubstituidas  NotaFiscal[]       @relation("Substituicao")
+  impostos           Imposto[]
+  historico          HistoricoAlteracao[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Imposto {
+  id             String    @id @default(cuid())
+  mesReferencia  String?
+  dataVencimento DateTime?
+  dataPagamento  DateTime?
+  imposto        String?
+  valor          Float?
+  status         String    @default("pendente")
+  observacao     String?
+  notaFiscalId   String?
+  notaFiscal     NotaFiscal? @relation(fields: [notaFiscalId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model HistoricoAlteracao {
+  id            String     @id @default(cuid())
+  notaFiscalId  String
+  campoAlterado String?
+  valorAntigo   String?
+  valorNovo     String?
+  usuario       String?
+  dataAcao      DateTime   @default(now())
+  notaFiscal    NotaFiscal @relation(fields: [notaFiscalId], references: [id], onDelete: Cascade)
+}
