@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+
+export const dynamic = 'force-dynamic';
 import { formatarMoeda, formatarData, formatarAliquota } from '@/lib/validators';
 import { STATUS_LABELS } from '@/types';
 

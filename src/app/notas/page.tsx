@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { PlusCircle, Search, Filter, FileText, ArrowUpDown, ChevronLeft, ChevronRight, Trash2, Eye } from 'lucide-react';
@@ -17,7 +17,7 @@ const SORT_OPTIONS = [
   { value: 'numeroNf', label: 'Número NF' },
 ];
 
-export default function NotasPage() {
+function NotasContent() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -212,5 +212,17 @@ export default function NotasPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function NotasPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full" />
+      </div>
+    }>
+      <NotasContent />
+    </Suspense>
   );
 }
