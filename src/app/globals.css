@@ -49,6 +49,13 @@
   }
 }
 
+/* Wizard enter animation */
+@keyframes wizardEnter {
+  from { opacity: 0; transform: translateY(14px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.animate-enter { animation: wizardEnter 0.22s ease-out; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { @apply bg-transparent; }
