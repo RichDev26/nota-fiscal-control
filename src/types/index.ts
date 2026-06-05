@@ -145,7 +145,20 @@ export interface PdfExtractResult {
   observacoesAutenticidade?: string;
   prestador?: Partial<PessoaFiscal>;
   tomador?: Partial<PessoaFiscal>;
+  // Campos de extração avançada (somente exibição — não salvos no banco)
+  desconto?: number;
+  descontoIncondicionado?: number;
+  deducoes?: number;
+  valorAproximadoTributosFederal?: number;
+  valorAproximadoTributosEstadual?: number;
+  valorAproximadoTributosMunicipal?: number;
+  simplesNacional?: boolean;
+  // Qualidade e validação
   camposNaoEncontrados?: string[];
+  camposBaixaConfianca?: string[];
+  inconsistencias?: string[];
+  fontesExtracao?: string[];
+  resumo?: string;
 }
 
 export interface FiltrosNota {

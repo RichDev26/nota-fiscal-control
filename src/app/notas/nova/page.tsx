@@ -287,31 +287,41 @@ export default function NovaNotaPage() {
 
   // ── Render: PDF — Step 3 (Review + Name) ───────────────────────────────────
   if (mode === 'pdf' && pdfStep === 'review') {
-    const missing = extracted?.camposNaoEncontrados || [];
-    const brl = (v: string) =>
-      v ? `R$ ${parseFloat(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '';
+    const missing  = extracted?.camposNaoEncontrados || [];
+    const lowConf  = extracted?.camposBaixaConfianca || [];
+    const issues   = extracted?.inconsistencias || [];
+
+    const brl = (v: string | number | undefined) => {
+      const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+      return isNaN(n) ? '' : `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    };
     const dataBR = (v: string) => {
       if (!v) return '';
       try { return new Date(v + 'T12:00:00').toLocaleDateString('pt-BR'); } catch { return v; }
     };
+    const pct = (v: string) => v ? `${v}%` : '';
 
-    const summary = [
-      { label: 'Número NF', value: form.numeroNf },
-      { label: 'Data Emissão', value: dataBR(form.dataEmissao) },
-      { label: 'Cód. Verificação', value: form.codigoVerificacao },
-      { label: 'OF', value: form.of },
-      { label: 'Município', value: form.municipioEmissor },
-      { label: 'Valor Bruto', value: brl(form.valorBruto) },
-      { label: 'Valor Líquido', value: brl(form.valorLiquido) },
-      { label: 'Alíquota ISS', value: form.aliquota ? `${form.aliquota}%` : '' },
-      { label: 'Valor ISS', value: brl(form.valorIss) },
-      { label: 'Nat. Operação', value: form.naturezaOperacao },
-      { label: 'Sit. Tributária', value: form.situacaoTributariaIssqn },
-      { label: 'Sit. NFS-e', value: form.situacaoNfse },
-      { label: 'Código Serviço', value: form.codigoServico },
-      { label: 'Tomador', value: tomador.nomeRazaoSocial || tomador.nomeFantasia || '' },
-      { label: 'Prestador', value: prestador.nomeRazaoSocial || prestador.nomeFantasia || '' },
-    ].filter(i => i.value);
+    // ── Section helper ──────────────────────────────────────────────────────
+    const Section = ({ title, rows }: { title: string; rows: { label: string; value: string; full?: boolean }[] }) => {
+      const visible = rows.filter(r => r.value);
+      if (!visible.length) return null;
+      return (
+        <div className="mb-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">{title}</p>
+          <div className="bg-gray-50 rounded-xl p-3 grid grid-cols-2 gap-x-4 gap-y-2">
+            {visible.map(({ label, value, full }) => (
+              <div key={label} className={`flex items-start gap-1.5 min-w-0 ${full ? 'col-span-2' : ''}`}>
+                <CheckCircle size={11} className="text-green-500 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] text-gray-400 leading-none">{label}</p>
+                  <p className="text-xs font-semibold text-gray-700 break-words">{value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
 
     return (
       <WizardShell
@@ -324,24 +334,23 @@ export default function NovaNotaPage() {
         isSave
         saveError={saveError}
       >
-        {/* Nome da nota — campo principal, em destaque */}
-        <div className="mb-5">
-          <label className="block text-sm font-bold text-gray-800 mb-2">
+        {/* ── Nome da nota ──────────────────────────────────────────────── */}
+        <div className="mb-4">
+          <label className="block text-sm font-bold text-gray-800 mb-1.5">
             Nome da nota <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
-            className="input text-sm py-3 font-medium"
+            className="input text-sm py-2.5 font-medium"
             placeholder="Ex: NF 187 – Instalação tanques de salmoura"
             value={form.nomeOrganizador || ''}
             onChange={e => sf('nomeOrganizador', e.target.value)}
             autoFocus
           />
-          <p className="text-xs text-gray-400 mt-1">Nome para identificar esta nota na lista.</p>
         </div>
 
-        {/* Data de vencimento */}
-        <div className="mb-5">
+        {/* ── Data de vencimento ────────────────────────────────────────── */}
+        <div className="mb-4">
           <label className="label">Data de Vencimento</label>
           <input
             type="date"
@@ -351,47 +360,102 @@ export default function NovaNotaPage() {
           />
         </div>
 
-        {/* Dados extraídos */}
-        {summary.length > 0 && (
-          <div className="bg-gray-50 rounded-2xl p-4 mb-4">
-            <div className="flex items-center gap-1.5 mb-3">
-              <Sparkles size={12} className="text-blue-500" />
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">
-                Dados extraídos automaticamente
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-              {summary.map(({ label, value }) => (
-                <div key={label} className="flex items-start gap-1.5 min-w-0">
-                  <CheckCircle size={12} className="text-green-500 mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-400 leading-none">{label}</p>
-                    <p className="text-xs font-semibold text-gray-700 truncate">{value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* ── Sparkles header ──────────────────────────────────────────── */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <Sparkles size={12} className="text-blue-500" />
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">
+            Dados extraídos automaticamente
+          </p>
+        </div>
 
-        {/* Descrição */}
-        {form.descricao && (
-          <div className="bg-blue-50 rounded-xl px-4 py-3 mb-4 border border-blue-100">
-            <p className="text-xs text-blue-400 font-semibold mb-0.5">Serviço</p>
-            <p className="text-sm text-blue-800 font-medium">{form.descricao}</p>
-          </div>
-        )}
+        {/* ── Identificação ─────────────────────────────────────────────── */}
+        <Section title="Identificação" rows={[
+          { label: 'NF Nº',            value: form.numeroNf },
+          { label: 'Tipo',             value: form.tipo },
+          { label: 'Data Emissão',     value: dataBR(form.dataEmissao) },
+          { label: 'Fato Gerador',     value: dataBR(form.dataFatoGerador) },
+          { label: 'Cód. Verificação', value: form.codigoVerificacao },
+          { label: 'Município',        value: form.municipioEmissor },
+          { label: 'Sit. NFS-e',       value: form.situacaoNfse },
+          { label: 'OF',               value: form.of },
+          { label: 'Cód. Serviço',     value: form.codigoServico },
+        ]} />
 
-        {/* Campos não encontrados */}
+        {/* ── Serviço ───────────────────────────────────────────────────── */}
+        <Section title="Serviço" rows={[
+          { label: 'Descrição',    value: form.descricao, full: true },
+          { label: 'Quantidade',   value: form.quantidade },
+          { label: 'Vlr. Unit.',   value: brl(form.valorUnitario) },
+        ]} />
+
+        {/* ── Partes ────────────────────────────────────────────────────── */}
+        <Section title="Prestador" rows={[
+          { label: 'Razão Social', value: prestador.nomeRazaoSocial || prestador.nomeFantasia || '' },
+          { label: 'CNPJ/CPF',    value: prestador.cpfCnpj || '' },
+          { label: 'Município',   value: prestador.municipio ? `${prestador.municipio}${prestador.uf ? '/' + prestador.uf : ''}` : '' },
+          { label: 'E-mail',      value: prestador.email || '', full: true },
+        ]} />
+        <Section title="Tomador" rows={[
+          { label: 'Razão Social', value: tomador.nomeRazaoSocial || tomador.nomeFantasia || '' },
+          { label: 'CNPJ/CPF',    value: tomador.cpfCnpj || '' },
+          { label: 'Município',   value: tomador.municipio ? `${tomador.municipio}${tomador.uf ? '/' + tomador.uf : ''}` : '' },
+          { label: 'Telefone',    value: tomador.telefone || '' },
+        ]} />
+
+        {/* ── Valores ───────────────────────────────────────────────────── */}
+        <Section title="Valores" rows={[
+          { label: 'Valor Bruto',   value: brl(form.valorBruto) },
+          { label: 'Valor Líquido', value: brl(form.valorLiquido) },
+          { label: 'Base Cálculo',  value: brl(form.baseCalculo) },
+          { label: 'Alíquota ISS',  value: pct(form.aliquota) },
+          { label: 'Valor ISS',     value: brl(form.valorIss) },
+          ...(extracted?.desconto ? [{ label: 'Desconto', value: brl(extracted.desconto) }] : []),
+          ...(extracted?.deducoes ? [{ label: 'Deduções', value: brl(extracted.deducoes) }] : []),
+        ]} />
+
+        {/* ── Retenções (mostra só se algum > 0) ───────────────────────── */}
+        {(() => {
+          const ret = [
+            { label: 'PIS/PASEP', value: form.pisPasep },
+            { label: 'COFINS',    value: form.cofins },
+            { label: 'INSS',      value: form.inss },
+            { label: 'IR',        value: form.ir },
+            { label: 'CSLL',      value: form.csll },
+            { label: 'Outras',    value: form.outrasRetencoes },
+          ].filter(r => r.value && parseFloat(r.value) > 0)
+           .map(r => ({ label: r.label, value: brl(r.value) }));
+          return <Section title="Retenções Federais" rows={ret} />;
+        })()}
+
+        {/* ── Fiscal ────────────────────────────────────────────────────── */}
+        <Section title="Fiscal" rows={[
+          { label: 'Nat. Operação',   value: form.naturezaOperacao },
+          { label: 'Sit. Tributária', value: form.situacaoTributariaIssqn },
+          { label: 'Local Prestação', value: form.localPrestacao },
+          { label: 'Regime',          value: form.regimeTributario },
+          ...(extracted?.simplesNacional ? [{ label: 'Simples Nacional', value: 'Sim' }] : []),
+          ...(extracted?.valorAproximadoTributosFederal != null ? [{
+            label: 'Trib. Federal',
+            value: brl(extracted.valorAproximadoTributosFederal),
+          }] : []),
+          ...(extracted?.valorAproximadoTributosMunicipal != null ? [{
+            label: 'Trib. Municipal',
+            value: brl(extracted.valorAproximadoTributosMunicipal),
+          }] : []),
+        ]} />
+
+        {/* ── Avisos ────────────────────────────────────────────────────── */}
+        {issues.length > 0 && (
+          <Alert type="error" className="mb-2"
+            message={`Inconsistência: ${issues.join(' | ')}`} />
+        )}
+        {lowConf.length > 0 && (
+          <Alert type="warning" className="mb-2"
+            message={`Baixa confiança: ${lowConf.join(', ')}`} />
+        )}
         {missing.length > 0 && (
-          <div className="flex items-start gap-2 bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-sm">
-            <AlertCircle size={15} className="text-yellow-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-yellow-800 text-xs">Não encontrados no PDF:</p>
-              <p className="text-yellow-700 text-xs mt-0.5">{missing.join(', ')}</p>
-              <p className="text-yellow-500 text-xs mt-0.5">Você pode editar a nota depois de salvar.</p>
-            </div>
-          </div>
+          <Alert type="warning"
+            message={`Não encontrado: ${missing.join(', ')} — edite após salvar.`} />
         )}
       </WizardShell>
     );
