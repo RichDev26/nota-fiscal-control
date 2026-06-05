@@ -63,10 +63,29 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Campos válidos no modelo NotaFiscal do Prisma
+const NOTA_FIELDS = new Set([
+  'nomeOrganizador','tipo','numeroNf','numeroRps','codigoVerificacao','of','descricao',
+  'dataEmissao','dataFatoGerador','dataVencimento','dataRecebimento','status',
+  'valorBruto','valorLiquido','aliquota','valorIss','baseCalculo',
+  'valorLiquidoAntecipacao','valorTotalTributosAntecipacao',
+  'ir','pisPasep','cofins','inss','csll','outrasRetencoes','valorAproximadoTributos',
+  'naturezaOperacao','situacaoTributariaIssqn','localPrestacao','situacaoNfse',
+  'observacoesFiscais','regimeTributario','indicacaoRetencao','observacoesAutenticidade',
+  'municipioEmissor','codigoServico','quantidade','valorUnitario',
+  'observacoes','arquivoPdfUrl','tags','prestadorId','tomadorId','notaSubstitutivaId',
+]);
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { prestador: prestadorData, tomador: tomadorData, ...notaData } = body;
+    const { prestador: prestadorData, tomador: tomadorData, ...rawData } = body;
+
+    // Remove campos desconhecidos para evitar erros do Prisma
+    const notaData: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rawData)) {
+      if (NOTA_FIELDS.has(k)) notaData[k] = v;
+    }
 
     let prestadorId: string | undefined;
     let tomadorId: string | undefined;
@@ -110,18 +129,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Parse dates
-    const parseDate = (d: string | null | undefined) => (d ? new Date(d) : null);
+    // Parse dates — notaData is Record<string, unknown>, cast para string
+    const str = (v: unknown) => (v && typeof v === 'string' ? v : null);
+    const parseDate = (v: unknown) => { const d = str(v); return d ? new Date(d) : null; };
 
     const nota = await prisma.notaFiscal.create({
       data: {
         ...notaData,
-        dataEmissao: parseDate(notaData.dataEmissao),
+        dataEmissao:    parseDate(notaData.dataEmissao),
         dataFatoGerador: parseDate(notaData.dataFatoGerador),
         dataVencimento: parseDate(notaData.dataVencimento),
         dataRecebimento: parseDate(notaData.dataRecebimento),
-        prestadorId: prestadorId || notaData.prestadorId || undefined,
-        tomadorId: tomadorId || notaData.tomadorId || undefined,
+        prestadorId: prestadorId || (str(notaData.prestadorId) ?? undefined),
+        tomadorId:   tomadorId   || (str(notaData.tomadorId)   ?? undefined),
       },
       include: { prestador: true, tomador: true },
     });
@@ -138,7 +158,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ nota }, { status: 201 });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: 'Erro ao criar nota' }, { status: 500 });
+    console.error('[POST /api/notas]', err);
+    const detail = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: 'Erro ao criar nota', detail }, { status: 500 });
   }
 }

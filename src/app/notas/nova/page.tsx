@@ -140,7 +140,7 @@ export default function NovaNotaPage() {
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) { setSaveError(data.error || 'Erro ao salvar.'); return; }
+      if (!res.ok) { setSaveError(data.detail || data.error || 'Erro ao salvar.'); return; }
       router.push(`/notas/${data.nota.id}`);
     } catch {
       setSaveError('Erro ao salvar nota.');

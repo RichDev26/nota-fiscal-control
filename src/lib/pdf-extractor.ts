@@ -304,7 +304,7 @@ function parsePessoa(block: string) {
   const municipioRaw = block.match(/Munic[ií]pio[:\s]+([^\n\t]+?)(?:\s{3,}|UF\s*:|$)/i)?.[1]?.trim();
   const ufRaw = block.match(/\bUF[:\s]*([A-Z]{2})\b/)?.[1];
   const clean = (s?: string | null) => (s?.replace(/\s+/g, ' ').trim() || undefined);
-  const LABELS = /^(Complemento|Bairro|CEP|Munic[ií]pio|UF[:\s]|E-?mail|Telefone|Celular|Site|CPF|CNPJ|Inscri[çc])/i;
+  const LABELS = /^(Endere[çc]o|Complemento|Bairro|CEP|Munic[ií]pio|UF[:\s]|E-?mail|Telefone|Celular|Site|CPF|CNPJ|Inscri[çc]|N[uú]mero[:\s]|ROD\s|R\s+[A-Z])/i;
   const notLabel = (v?: string) => (v && !LABELS.test(v)) ? v : undefined;
   const validPhone = (v?: string) => (v && !/\//.test(v) && /\d{4,}/.test(v)) ? v : undefined;
   return {
