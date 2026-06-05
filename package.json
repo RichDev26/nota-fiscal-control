@@ -13,6 +13,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
     "@prisma/client": "^5.14.0",
     "date-fns": "^3.6.0",
     "lucide-react": "^0.395.0",

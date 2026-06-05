@@ -101,7 +101,12 @@ export async function POST(req: NextRequest) {
     for (const f of FLOAT_FIELDS) {
       if (f in notaData) {
         const v = notaData[f];
-        notaData[f] = (v === '' || v == null) ? null : (Number(v) || null);
+        if (v === '' || v == null) {
+          notaData[f] = null;
+        } else {
+          const n = Number(v);
+          notaData[f] = isNaN(n) ? null : n;  // 0 é válido — não usar || null
+        }
       }
     }
 
