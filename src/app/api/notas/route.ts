@@ -91,6 +91,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Campos numéricos — o formulário envia strings; Prisma exige Float
+    const FLOAT_FIELDS = [
+      'valorBruto', 'valorLiquido', 'aliquota', 'valorIss', 'baseCalculo',
+      'valorLiquidoAntecipacao', 'valorTotalTributosAntecipacao',
+      'ir', 'pisPasep', 'cofins', 'inss', 'csll', 'outrasRetencoes',
+      'valorAproximadoTributos', 'quantidade', 'valorUnitario',
+    ];
+    for (const f of FLOAT_FIELDS) {
+      if (f in notaData) {
+        const v = notaData[f];
+        notaData[f] = (v === '' || v == null) ? null : (Number(v) || null);
+      }
+    }
+
     // Parse dates
     const parseDate = (d: string | null | undefined) => (d ? new Date(d) : null);
 

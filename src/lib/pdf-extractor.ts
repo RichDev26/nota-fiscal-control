@@ -62,12 +62,23 @@ function parsePessoa(block: string) {
 
   const clean = (s?: string | null) => (s?.replace(/\s+/g, ' ').trim() || undefined);
 
+  // Rejeita valores que são, na verdade, labels de outros campos capturados por engano
+  const FIELD_LABELS = /^(Complemento|Bairro|CEP|Munic[ií]pio|UF[:\s]|E-?mail|Telefone|Celular|Site|CPF|CNPJ|Inscri[çc])/i;
+  const notLabel = (v?: string) => (v && !FIELD_LABELS.test(v)) ? v : undefined;
+
+  // Telefone/celular brasileiro deve ter 7+ dígitos e NÃO ter barra (que aparece no CNPJ)
+  const validPhone = (v?: string) => {
+    if (!v) return undefined;
+    if (/\//.test(v)) return undefined;       // contém barra → provavelmente CNPJ
+    return /\d{4,}/.test(v) ? v : undefined;
+  };
+
   return {
-    nomeRazaoSocial: clean(extract(block, [
+    nomeRazaoSocial: notLabel(clean(extract(block, [
       /Nome\s*\/?\s*Raz[ãa]o\s+[Ss]ocial[:\s]+([^\n]+)/i,
       /Raz[ãa]o\s+[Ss]ocial[:\s]+([^\n]+)/i,
-    ])),
-    nomeFantasia: clean(extract(block, [/Nome\s+[Ff]antasia[:\s]+([^\n]+)/i])),
+    ]))),
+    nomeFantasia: notLabel(clean(extract(block, [/Nome\s+[Ff]antasia[:\s]+([^\n]+)/i]))),
     cpfCnpj: extract(block, [
       /CPF\s*\/\s*CNPJ[:\s]*([\d.\/\-]{11,18})/i,
       /CNPJ[:\s]*([\d.\/\-]{14,18})/i,
@@ -81,11 +92,8 @@ function parsePessoa(block: string) {
       return (v && v.length > 1) ? v : undefined;
     })(),
     email: extract(block, [/E-?[Mm]ail[:\s]+([a-zA-Z0-9._%+\-]+@[^\s\n,]+)/i])?.trim(),
-    telefone: extract(block, [/Telefone[:\s]+([\(\d\s\)\-\.]{7,20})/i])?.trim(),
-    celular: (() => {
-      const v = extract(block, [/Celular[:\s]+([\(\d\s\)\-\.]{7,20})/i])?.trim();
-      return (v && /\d{4,}/.test(v)) ? v : undefined;
-    })(),
+    telefone: validPhone(extract(block, [/Telefone[:\s]+([\(\d\s\)\-\.]{7,20})/i])?.trim()),
+    celular: validPhone(extract(block, [/Celular[:\s]+([\(\d\s\)\-\.]{7,20})/i])?.trim()),
     endereco: enderecoBase || undefined,
     numero,
     complemento: (() => {
@@ -105,7 +113,8 @@ function parsePessoa(block: string) {
 export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractResult> {
   const pdfParse = (await import('pdf-parse')).default;
   const raw = (await pdfParse(buffer)).text ?? '';
-  const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Normalize to NFC so accented chars (Ç, Ã, Õ…) match [ÇC], [ÕO] etc.
+  const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').normalize('NFC');
 
   const result: PdfExtractResult = {};
   const lowConf: string[] = [];
@@ -116,7 +125,7 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
 
   // ─── Número da nota ──────────────────────────────────────────────────────────
   result.numeroNf = extract(text, [
-    /N[uú]mero\s+da\s+nota\s*\n+\s*(\d+)/i,           // valor na linha seguinte
+    /N[uú]mero\s+da\s+nota\s{0,30}(\d+)/i,              // valor separado por qualquer espaço/tab/newline
     /NFS?-?e\s+N[º°o]?\s*\.?\s*(\d+)/i,
     /N[uú]mero\s+(?:da\s+)?NFS?-?e[:\s]+(\d+)/i,
     /Nota\s+Fiscal[^\n]{0,40}N[º°]\s*(\d+)/i,
@@ -125,7 +134,7 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
 
   // ─── Número RPS ──────────────────────────────────────────────────────────────
   result.numeroRps = extract(text, [
-    /N[uú]mero\s+do\s+RPS\s*\n+\s*(\d+)/i,
+    /N[uú]mero\s+do\s+RPS\s{0,30}(\d+)/i,
     /N[uú]mero\s+do\s+RPS[:\s]+(\d+)/i,
     /RPS\s*N[º°]?\s*[:\s]*(\d+)/i,
   ]);
@@ -133,7 +142,7 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
   // ─── Código de verificação ───────────────────────────────────────────────────
   // Pattern: multi-char uppercase + digit(s) + more alphanum — e.g. FHZSBPES7
   result.codigoVerificacao = extract(text, [
-    /C[oó]digo\s+de\s+[Vv]erifica[çc][ãa]o\s*\n+\s*([A-Z0-9]{6,20})/i,
+    /C[oó]digo\s+de\s+[Vv]erifica[çc][ãa]o\s{0,30}([A-Z0-9]{6,20})/i,
     /C[oó]digo\s+de\s+[Vv]erifica[çc][ãa]o[:\s]+([A-Z0-9]{6,20})/i,
     /Verifica[çc][ãa]o[:\s\n]+([A-Z0-9]{6,20})/i,
     // Standalone codes like "FHZSBPES7": 3+ uppercase letters, then digits, then optionally more
@@ -142,14 +151,14 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
 
   // ─── Datas ───────────────────────────────────────────────────────────────────
   result.dataEmissao = extractDate(text, [
-    /Data\s+da\s+emiss[ãa]o\s+da\s+nota\s*\n+\s*(\d{2}\/\d{2}\/\d{4})/i,
+    /Data\s+da\s+emiss[ãa]o\s+da\s+nota\s{0,30}(\d{2}\/\d{2}\/\d{4})/i,
     /Data\s+(?:e\s+Hora\s+)?(?:de\s+)?[Ee]miss[ãa]o[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
     /[Ee]miss[ãa]o\s+da\s+[Nn]ota[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
     /[Ee]miss[ãa]o[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
   ]);
 
   result.dataFatoGerador = extractDate(text, [
-    /Data\s+do\s+fato\s+gerador\s*\n+\s*(\d{2}\/\d{2}\/\d{4})/i,
+    /Data\s+do\s+fato\s+gerador\s{0,30}(\d{2}\/\d{2}\/\d{4})/i,
     /[Ff]ato\s+[Gg]erador[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
     /[Cc]ompet[eê]ncia[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
   ]);
@@ -198,9 +207,14 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
     ? text.slice(dStart, retStart > dStart ? retStart : dStart + 1200)
     : '';
 
-  const retBlock = retStart >= 0
-    ? text.slice(retStart, retStart + 700)
-    : text;
+  // retBlock: bounded ONLY to the RETENÇÕES section, limited before "Valor bruto" to
+  // avoid the fallback picking up the nota's total values.
+  const retBlock = (() => {
+    if (retStart < 0) return '';          // seção não encontrada → não faz fallback
+    const vbPos = text.indexOf('Valor bruto', retStart);
+    const end = vbPos > retStart ? Math.min(vbPos, retStart + 600) : retStart + 600;
+    return text.slice(retStart, end);
+  })();
 
   const outrasBlock = outStart >= 0
     ? text.slice(outStart)
