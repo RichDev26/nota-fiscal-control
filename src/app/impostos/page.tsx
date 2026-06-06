@@ -1,91 +1,172 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { PlusCircle, Receipt, Save, X, Edit3, Trash2, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import {
+  PlusCircle, X, Save, Loader2, AlertCircle, CheckCircle,
+  Receipt, Trash2, Edit3, Calendar,
+} from 'lucide-react';
 import { formatarMoeda, formatarData } from '@/lib/validators';
 import { STATUS_IMPOSTO_LABELS, STATUS_IMPOSTO_COLORS } from '@/types';
 import type { Imposto } from '@/types';
 
-const IMPOSTOS_TIPOS = ['ISS', 'IRPJ', 'CSLL', 'PIS', 'COFINS', 'INSS', 'IRRF', 'Simples Nacional', 'Outros'];
-const STATUS_OPTIONS = ['pendente', 'pago', 'vencido', 'cancelado'];
+const TIPOS = ['ISS', 'IRPJ', 'CSLL', 'PIS', 'COFINS', 'INSS', 'IRRF', 'Simples Nacional', 'Outros'];
+const STATUS_OPTS = ['pendente', 'pago', 'vencido', 'cancelado'];
 
 const emptyForm = () => ({
-  mesReferencia: '',
-  dataVencimento: '',
-  dataPagamento: '',
-  imposto: '',
-  valor: '',
-  status: 'pendente',
-  observacao: '',
-  notaFiscalId: '',
+  mesReferencia: '', dataVencimento: '', dataPagamento: '',
+  imposto: '', valor: '', status: 'pendente', observacao: '',
 });
 
-export default function ImpostosPage() {
-  const [impostos, setImpostos] = useState<Imposto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState<Record<string, string>>(emptyForm());
+// ─── Toast ─────────────────────────────────────────────────────────────────────
+function Toast({ msg, type, onClose }: { msg: string; type: 'success' | 'error'; onClose: () => void }) {
+  useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, [onClose]);
+  return (
+    <div className={`toast-enter fixed bottom-24 md:bottom-6 right-4 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold ${
+      type === 'success' ? 'bg-white border border-green-100 text-green-800' : 'bg-white border border-red-100 text-red-700'
+    }`}>
+      {type === 'success' ? <CheckCircle size={18} className="text-green-500" /> : <AlertCircle size={18} className="text-red-500" />}
+      {msg}
+    </div>
+  );
+}
+
+// ─── Modal Imposto ─────────────────────────────────────────────────────────────
+function ImpostoModal({ editId, initial, onClose, onSaved }: {
+  editId: string | null; initial: Record<string, string>;
+  onClose: () => void; onSaved: () => void;
+}) {
+  const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterMes, setFilterMes] = useState('');
-
-  const fetchImpostos = async () => {
-    setLoading(true);
-    try {
-      const p = new URLSearchParams({ status: filterStatus, mesReferencia: filterMes });
-      const r = await fetch(`/api/impostos?${p}`);
-      const d = await r.json();
-      setImpostos(Array.isArray(d) ? d : []);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchImpostos(); }, [filterStatus, filterMes]);
-
-  const startNew = () => { setForm(emptyForm()); setEditId(null); setShowForm(true); setError(''); setSuccess(''); };
-  const startEdit = (imp: Imposto) => {
-    setForm({
-      mesReferencia: imp.mesReferencia || '',
-      dataVencimento: imp.dataVencimento ? new Date(imp.dataVencimento).toISOString().split('T')[0] : '',
-      dataPagamento: imp.dataPagamento ? new Date(imp.dataPagamento).toISOString().split('T')[0] : '',
-      imposto: imp.imposto || '',
-      valor: imp.valor != null ? String(imp.valor) : '',
-      status: imp.status,
-      observacao: imp.observacao || '',
-      notaFiscalId: imp.notaFiscalId || '',
-    });
-    setEditId(imp.id);
-    setShowForm(true);
-    setError('');
-  };
+  const [error, setError]   = useState('');
+  const f = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
   const handleSubmit = async () => {
     if (!form.imposto || !form.valor) { setError('Imposto e valor são obrigatórios.'); return; }
-    setSaving(true); setError(''); setSuccess('');
+    setSaving(true); setError('');
     try {
       const payload = { ...form, valor: parseFloat(form.valor) || 0 };
-      const url = editId ? `/api/impostos/${editId}` : '/api/impostos';
+      const url    = editId ? `/api/impostos/${editId}` : '/api/impostos';
       const method = editId ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) { const d = await res.json(); setError(d.error || 'Erro.'); return; }
-      setSuccess(editId ? 'Atualizado!' : 'Criado!');
-      setShowForm(false);
-      setEditId(null);
-      fetchImpostos();
-    } catch {
-      setError('Erro ao salvar.');
-    } finally {
-      setSaving(false);
-    }
+      onSaved();
+    } catch { setError('Erro ao salvar.'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 animate-enter" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-bold text-gray-900 text-lg">{editId ? 'Editar Imposto' : 'Novo Imposto'}</h3>
+          <button onClick={onClose} className="btn-ghost p-1.5"><X size={16} /></button>
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 bg-red-50 text-red-700 rounded-xl p-3 text-sm mb-4">
+            <AlertCircle size={14} />{error}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="label">Tipo de Imposto *</label>
+            <select className="input" value={form.imposto} onChange={e => f('imposto', e.target.value)}>
+              <option value="">Selecione...</option>
+              {TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Valor (R$) *</label>
+            <input type="number" step="0.01" className="input text-lg font-bold" placeholder="0,00"
+              value={form.valor} onChange={e => f('valor', e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Mês Referência</label>
+              <input type="month" className="input" value={form.mesReferencia} onChange={e => f('mesReferencia', e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Vencimento</label>
+              <input type="date" className="input" value={form.dataVencimento} onChange={e => f('dataVencimento', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Pagamento</label>
+              <input type="date" className="input" value={form.dataPagamento} onChange={e => f('dataPagamento', e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Status</label>
+              <select className="input" value={form.status} onChange={e => f('status', e.target.value)}>
+                {STATUS_OPTS.map(s => <option key={s} value={s}>{STATUS_IMPOSTO_LABELS[s] || s}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Observação</label>
+            <input type="text" className="input" placeholder="Opcional" value={form.observacao} onChange={e => f('observacao', e.target.value)} />
+          </div>
+        </div>
+
+        <button onClick={handleSubmit} disabled={saving}
+          className="btn-primary w-full py-3.5 rounded-2xl text-base justify-center mt-5">
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          {editId ? 'Atualizar' : 'Salvar Imposto'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ──────────────────────────────────────────────────────────────────────
+export default function ImpostosPage() {
+  const now = new Date();
+  const defaultMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  const [impostos, setImpostos] = useState<Imposto[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [filterMes, setFilterMes] = useState(defaultMes);
+  const [showModal, setShowModal]  = useState(false);
+  const [editId, setEditId]        = useState<string | null>(null);
+  const [editForm, setEditForm]    = useState<Record<string, string>>(emptyForm());
+  const [toast, setToast]          = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
+
+  const fetchImpostos = useCallback(async () => {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({ mesReferencia: filterMes });
+      const r = await fetch(`/api/impostos?${p}`);
+      const d = await r.json();
+      setImpostos(Array.isArray(d) ? d : []);
+    } finally { setLoading(false); }
+  }, [filterMes]);
+
+  useEffect(() => { fetchImpostos(); }, [fetchImpostos]);
+
+  const openNew = () => {
+    const initial = emptyForm();
+    initial.mesReferencia = filterMes;
+    setEditForm(initial); setEditId(null); setShowModal(true);
+  };
+
+  const openEdit = (imp: Imposto) => {
+    setEditForm({
+      mesReferencia: imp.mesReferencia || '',
+      dataVencimento: imp.dataVencimento ? new Date(imp.dataVencimento).toISOString().split('T')[0] : '',
+      dataPagamento: imp.dataPagamento ? new Date(imp.dataPagamento).toISOString().split('T')[0] : '',
+      imposto: imp.imposto || '', valor: imp.valor != null ? String(imp.valor) : '',
+      status: imp.status, observacao: imp.observacao || '',
+    });
+    setEditId(imp.id); setShowModal(true);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Excluir este imposto?')) return;
     await fetch(`/api/impostos/${id}`, { method: 'DELETE' });
+    showToast('Imposto excluído.');
     fetchImpostos();
   };
 
@@ -95,179 +176,167 @@ export default function ImpostosPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...imp, status: 'pago', dataPagamento: new Date().toISOString().split('T')[0] }),
     });
+    showToast('Marcado como pago!');
     fetchImpostos();
   };
 
-  const f = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+  const handleSaved = () => {
+    setShowModal(false);
+    showToast(editId ? 'Imposto atualizado!' : 'Imposto adicionado!');
+    fetchImpostos();
+  };
 
-  // Totais
+  // Totais do mês
   const totalPendente = impostos.filter(i => i.status === 'pendente').reduce((s, i) => s + (i.valor || 0), 0);
-  const totalPago = impostos.filter(i => i.status === 'pago').reduce((s, i) => s + (i.valor || 0), 0);
-  const totalVencido = impostos.filter(i => i.status === 'vencido').reduce((s, i) => s + (i.valor || 0), 0);
+  const totalPago     = impostos.filter(i => i.status === 'pago').reduce((s, i) => s + (i.valor || 0), 0);
+  const totalVencido  = impostos.filter(i => i.status === 'vencido').reduce((s, i) => s + (i.valor || 0), 0);
+  const total         = impostos.reduce((s, i) => s + (i.valor || 0), 0);
+
+  // Formata mês para exibição
+  const mesBR = (() => {
+    if (!filterMes) return '';
+    const [y, m] = filterMes.split('-');
+    const d = new Date(parseInt(y), parseInt(m) - 1);
+    return d.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+  })();
+
+  const statusGroup: Record<string, Imposto[]> = {};
+  impostos.forEach(i => {
+    const k = i.imposto || 'Outros';
+    if (!statusGroup[k]) statusGroup[k] = [];
+    statusGroup[k].push(i);
+  });
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl">
-      <div className="flex items-center justify-between">
+    <div className="p-5 md:p-8 max-w-lg mx-auto space-y-6">
+      {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+      {showModal && (
+        <ImpostoModal editId={editId} initial={editForm} onClose={() => setShowModal(false)} onSaved={handleSaved} />
+      )}
+
+      {/* Header */}
+      <div className="pt-2 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Impostos e Encargos</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Controle de tributos vinculados às notas fiscais</p>
+          <div className="flex items-center gap-3 mb-0.5">
+            <div className="w-10 h-10 bg-orange-50 rounded-2xl flex items-center justify-center">
+              <Receipt size={18} className="text-orange-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">Impostos</h1>
+          </div>
+          {mesBR && <p className="text-sm text-gray-400 capitalize ml-13">{mesBR}</p>}
         </div>
-        <button onClick={startNew} className="btn-primary"><PlusCircle size={16} /> Novo Imposto</button>
+        <button onClick={openNew} className="btn-primary shrink-0">
+          <PlusCircle size={15} /> Adicionar
+        </button>
       </div>
 
-      {/* Cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="card p-4">
-          <p className="text-xs text-yellow-600 font-semibold uppercase">Pendente</p>
-          <p className="text-xl font-bold text-yellow-700 mt-1">{formatarMoeda(totalPendente)}</p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs text-green-600 font-semibold uppercase">Pago</p>
-          <p className="text-xl font-bold text-green-700 mt-1">{formatarMoeda(totalPago)}</p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs text-red-600 font-semibold uppercase">Vencido</p>
-          <p className="text-xl font-bold text-red-700 mt-1">{formatarMoeda(totalVencido)}</p>
+      {/* Seletor de mês */}
+      <div className="card p-4 flex items-center gap-3">
+        <Calendar size={16} className="text-gray-400 shrink-0" />
+        <div className="flex-1">
+          <label className="label mb-0.5">Mês de referência</label>
+          <input type="month" className="input py-1.5 text-sm" value={filterMes} onChange={e => setFilterMes(e.target.value)} />
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="card p-4 flex gap-3">
-        <select className="input w-48" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="">Todos os status</option>
-          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_IMPOSTO_LABELS[s]}</option>)}
-        </select>
-        <input type="month" className="input w-48" value={filterMes} onChange={e => setFilterMes(e.target.value)} title="Mês de referência" />
-        {(filterStatus || filterMes) && (
-          <button className="btn-ghost btn-sm text-red-500" onClick={() => { setFilterStatus(''); setFilterMes(''); }}>Limpar</button>
-        )}
-      </div>
-
-      {/* Alertas */}
-      {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm"><AlertCircle size={15} />{error}</div>}
-      {success && <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg p-3 text-sm"><CheckCircle size={15} />{success}</div>}
-
-      {/* Formulário */}
-      {showForm && (
+      {/* Totais */}
+      {impostos.length > 0 && (
         <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-800">{editId ? 'Editar Imposto' : 'Novo Imposto'}</h2>
-            <button className="btn-ghost p-1.5" onClick={() => { setShowForm(false); setEditId(null); }}><X size={16} /></button>
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-              <label className="label">Imposto *</label>
-              <select className="input" value={form.imposto} onChange={e => f('imposto', e.target.value)}>
-                <option value="">Selecione...</option>
-                {IMPOSTOS_TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Valor (R$) *</label>
-              <input type="number" step="0.01" className="input" value={form.valor} onChange={e => f('valor', e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Mês de Referência</label>
-              <input type="month" className="input" value={form.mesReferencia} onChange={e => f('mesReferencia', e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Data de Vencimento</label>
-              <input type="date" className="input" value={form.dataVencimento} onChange={e => f('dataVencimento', e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Data de Pagamento</label>
-              <input type="date" className="input" value={form.dataPagamento} onChange={e => f('dataPagamento', e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Status</label>
-              <select className="input" value={form.status} onChange={e => f('status', e.target.value)}>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_IMPOSTO_LABELS[s]}</option>)}
-              </select>
-            </div>
-            <div className="lg:col-span-3">
-              <label className="label">Observação</label>
-              <input type="text" className="input" value={form.observacao} onChange={e => f('observacao', e.target.value)} />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <button className="btn-secondary" onClick={() => { setShowForm(false); setEditId(null); }}>Cancelar</button>
-            <button className="btn-primary" onClick={handleSubmit} disabled={saving}>
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {editId ? 'Atualizar' : 'Salvar'}
-            </button>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Total do mês</p>
+          <p className="text-3xl font-bold text-gray-900 mb-4">{formatarMoeda(total)}</p>
+          <div className="grid grid-cols-3 gap-3">
+            {totalPendente > 0 && (
+              <div className="text-center">
+                <p className="text-sm font-bold text-amber-700">{formatarMoeda(totalPendente)}</p>
+                <p className="text-[10px] text-gray-400 font-medium mt-0.5">Pendente</p>
+              </div>
+            )}
+            {totalPago > 0 && (
+              <div className="text-center">
+                <p className="text-sm font-bold text-green-700">{formatarMoeda(totalPago)}</p>
+                <p className="text-[10px] text-gray-400 font-medium mt-0.5">Pago</p>
+              </div>
+            )}
+            {totalVencido > 0 && (
+              <div className="text-center">
+                <p className="text-sm font-bold text-red-700">{formatarMoeda(totalVencido)}</p>
+                <p className="text-[10px] text-gray-400 font-medium mt-0.5">Vencido</p>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Tabela */}
-      <div className="card overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full" />
+      {/* Lista */}
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Loader2 size={24} className="animate-spin text-blue-400" />
+        </div>
+      ) : impostos.length === 0 ? (
+        <div className="card p-12 flex flex-col items-center gap-4 text-center">
+          <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center">
+            <Receipt size={28} className="text-gray-300" />
           </div>
-        ) : impostos.length === 0 ? (
-          <div className="flex flex-col items-center py-12 text-gray-400">
-            <Receipt size={40} className="mb-3 opacity-30" />
-            <p className="font-medium">Nenhum imposto cadastrado</p>
-            <button onClick={startNew} className="btn-primary mt-4"><PlusCircle size={14} /> Novo Imposto</button>
+          <div>
+            <p className="font-semibold text-gray-500">Nenhum imposto</p>
+            <p className="text-sm text-gray-400 mt-1">Adicione os impostos deste mês</p>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="table-auto w-full">
-              <thead>
-                <tr>
-                  <th>Imposto</th><th>Mês Ref.</th><th>Vencimento</th><th>Pagamento</th>
-                  <th className="text-right">Valor</th><th>Status</th><th>NF Vinculada</th><th>Observação</th><th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {impostos.map(imp => (
-                  <tr key={imp.id}>
-                    <td className="font-semibold text-gray-800">{imp.imposto}</td>
-                    <td className="text-gray-600">{imp.mesReferencia || '—'}</td>
-                    <td className={`${!imp.dataPagamento && imp.dataVencimento && new Date(imp.dataVencimento) < new Date() ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
-                      {formatarData(imp.dataVencimento)}
-                    </td>
-                    <td className="text-gray-600">{formatarData(imp.dataPagamento)}</td>
-                    <td className="text-right font-semibold text-gray-900">{formatarMoeda(imp.valor)}</td>
-                    <td>
-                      <span className={`badge ${STATUS_IMPOSTO_COLORS[imp.status] || 'bg-gray-100'}`}>
-                        {STATUS_IMPOSTO_LABELS[imp.status] || imp.status}
-                      </span>
-                    </td>
-                    <td className="text-xs text-gray-500">
-                      {imp.notaFiscal ? (imp.notaFiscal.nomeOrganizador || `NF ${imp.notaFiscal.numeroNf}`) : '—'}
-                    </td>
-                    <td className="text-gray-500 text-xs max-w-[120px] truncate">{imp.observacao || '—'}</td>
-                    <td>
-                      <div className="flex gap-1">
-                        {imp.status !== 'pago' && (
-                          <button onClick={() => handlePago(imp)} className="btn-ghost btn-sm p-1.5 text-green-600" title="Marcar como pago">
-                            <CheckCircle size={14} />
-                          </button>
-                        )}
-                        <button onClick={() => startEdit(imp)} className="btn-ghost btn-sm p-1.5" title="Editar">
-                          <Edit3 size={14} />
-                        </button>
-                        <button onClick={() => handleDelete(imp.id)} className="btn-ghost btn-sm p-1.5 text-red-400 hover:text-red-600" title="Excluir">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-gray-50">
-                  <td colSpan={4} className="px-3 py-2 font-bold text-sm text-gray-700">TOTAL GERAL</td>
-                  <td className="text-right px-3 py-2 font-bold text-gray-900">{formatarMoeda(impostos.reduce((s, i) => s + (i.valor || 0), 0))}</td>
-                  <td colSpan={4} />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </div>
+          <button onClick={openNew} className="btn-primary">
+            <PlusCircle size={15} /> Adicionar Imposto
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {impostos.map(imp => (
+            <div key={imp.id} className="card p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center shrink-0">
+                  <Receipt size={16} className="text-orange-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-gray-900">{imp.imposto}</p>
+                    <span className={`badge ${STATUS_IMPOSTO_COLORS[imp.status] || 'bg-gray-100 text-gray-500'} text-[10px]`}>
+                      {STATUS_IMPOSTO_LABELS[imp.status] || imp.status}
+                    </span>
+                  </div>
+                  <p className="text-xl font-bold text-gray-900 mt-0.5">{formatarMoeda(imp.valor)}</p>
+                  <div className="flex gap-3 mt-1 flex-wrap">
+                    {imp.dataVencimento && (
+                      <p className="text-xs text-gray-400">Vence {formatarData(imp.dataVencimento)}</p>
+                    )}
+                    {imp.dataPagamento && (
+                      <p className="text-xs text-green-600 font-medium">Pago {formatarData(imp.dataPagamento)}</p>
+                    )}
+                    {imp.observacao && <p className="text-xs text-gray-400 truncate">{imp.observacao}</p>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Ações */}
+              <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
+                {imp.status === 'pendente' && (
+                  <button onClick={() => handlePago(imp)}
+                    className="btn-secondary btn-sm text-green-700 flex items-center gap-1 text-xs">
+                    <CheckCircle size={12} /> Marcar Pago
+                  </button>
+                )}
+                <button onClick={() => openEdit(imp)}
+                  className="btn-ghost btn-sm flex items-center gap-1 text-xs text-gray-500">
+                  <Edit3 size={12} /> Editar
+                </button>
+                <button onClick={() => handleDelete(imp.id)}
+                  className="btn-ghost btn-sm text-red-400 hover:text-red-600 ml-auto">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Botão flutuante mobile */}
+      <div className="h-6" />
     </div>
   );
 }
