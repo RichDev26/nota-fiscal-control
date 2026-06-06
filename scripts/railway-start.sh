@@ -3,6 +3,15 @@ echo "========================================"
 echo "[DB] Iniciando setup do banco..."
 echo "========================================"
 
+# Garante que o schema PostgreSQL está ativo (o cp do buildCommand pode não persistir)
+if [ -f "prisma/schema.postgresql.prisma" ]; then
+  echo "[DB] Copiando schema PostgreSQL..."
+  cp prisma/schema.postgresql.prisma prisma/schema.prisma
+  echo "[DB] Schema PostgreSQL ativado."
+else
+  echo "[DB] AVISO: schema.postgresql.prisma não encontrado!"
+fi
+
 # Tenta migrate deploy primeiro (preserva dados)
 echo "[DB] Tentando prisma migrate deploy..."
 if npx prisma migrate deploy; then

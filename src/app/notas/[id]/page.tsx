@@ -251,9 +251,12 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
             <Section title="Serviço e Valores">
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="col-span-2 lg:col-span-3">
-                  <label className="label">Descrição</label>
+                  <label className="label">Descrição do Serviço</label>
                   <textarea className="input min-h-[80px]" value={String(form.descricao ?? '')} onChange={e => sf('descricao', e.target.value)} />
                 </div>
+                <FEdit label="Código de Serviço" fkey="codigoServico" source={form} setter={sf} />
+                <FEdit label="Quantidade" fkey="quantidade" type="number" source={form} setter={sf} />
+                <FEdit label="Valor Unitário" fkey="valorUnitario" type="number" source={form} setter={sf} />
                 <FEdit label="Valor Bruto" fkey="valorBruto" type="number" source={form} setter={sf} />
                 <FEdit label="Valor Líquido" fkey="valorLiquido" type="number" source={form} setter={sf} />
                 <FEdit label="Base de Cálculo" fkey="baseCalculo" type="number" source={form} setter={sf} />
@@ -264,25 +267,55 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
                 <FEdit label="COFINS" fkey="cofins" type="number" source={form} setter={sf} />
                 <FEdit label="INSS" fkey="inss" type="number" source={form} setter={sf} />
                 <FEdit label="CSLL" fkey="csll" type="number" source={form} setter={sf} />
-                <FEdit label="Observações" fkey="observacoes" source={form} setter={sf} />
+                <FEdit label="Outras Retenções" fkey="outrasRetencoes" type="number" source={form} setter={sf} />
+                <div className="col-span-2 lg:col-span-3">
+                  <label className="label">Observações Fiscais</label>
+                  <textarea className="input min-h-[60px]" value={String(form.observacoesFiscais ?? '')} onChange={e => sf('observacoesFiscais', e.target.value)} />
+                </div>
+                <div className="col-span-2 lg:col-span-3">
+                  <label className="label">Observações Gerais</label>
+                  <textarea className="input min-h-[60px]" value={String(form.observacoes ?? '')} onChange={e => sf('observacoes', e.target.value)} />
+                </div>
               </div>
             </Section>
-            <Section title="Prestador">
+            <Section title="Prestador de Serviços">
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                 <FEdit label="Razão Social" fkey="nomeRazaoSocial" source={prestador} setter={sp2} />
+                <FEdit label="Nome Fantasia" fkey="nomeFantasia" source={prestador} setter={sp2} />
                 <FEdit label="CNPJ/CPF" fkey="cpfCnpj" source={prestador} setter={sp2} />
                 <FEdit label="Insc. Municipal" fkey="inscricaoMunicipal" source={prestador} setter={sp2} />
+                <FEdit label="Insc. Estadual" fkey="inscricaoEstadual" source={prestador} setter={sp2} />
                 <FEdit label="E-mail" fkey="email" type="email" source={prestador} setter={sp2} />
                 <FEdit label="Telefone" fkey="telefone" source={prestador} setter={sp2} />
+                <FEdit label="Celular" fkey="celular" source={prestador} setter={sp2} />
+                <FEdit label="Endereço" fkey="endereco" source={prestador} setter={sp2} />
+                <FEdit label="Número" fkey="numero" source={prestador} setter={sp2} />
+                <FEdit label="Complemento" fkey="complemento" source={prestador} setter={sp2} />
+                <FEdit label="Bairro" fkey="bairro" source={prestador} setter={sp2} />
+                <FEdit label="CEP" fkey="cep" source={prestador} setter={sp2} />
+                <FEdit label="Município" fkey="municipio" source={prestador} setter={sp2} />
+                <FEdit label="UF" fkey="uf" source={prestador} setter={sp2} />
+                <FEdit label="Site" fkey="site" source={prestador} setter={sp2} />
               </div>
             </Section>
-            <Section title="Tomador">
+            <Section title="Tomador de Serviços">
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                 <FEdit label="Razão Social" fkey="nomeRazaoSocial" source={tomador} setter={st} />
+                <FEdit label="Nome Fantasia" fkey="nomeFantasia" source={tomador} setter={st} />
                 <FEdit label="CNPJ/CPF" fkey="cpfCnpj" source={tomador} setter={st} />
                 <FEdit label="Insc. Municipal" fkey="inscricaoMunicipal" source={tomador} setter={st} />
+                <FEdit label="Insc. Estadual" fkey="inscricaoEstadual" source={tomador} setter={st} />
                 <FEdit label="E-mail" fkey="email" type="email" source={tomador} setter={st} />
                 <FEdit label="Telefone" fkey="telefone" source={tomador} setter={st} />
+                <FEdit label="Celular" fkey="celular" source={tomador} setter={st} />
+                <FEdit label="Endereço" fkey="endereco" source={tomador} setter={st} />
+                <FEdit label="Número" fkey="numero" source={tomador} setter={st} />
+                <FEdit label="Complemento" fkey="complemento" source={tomador} setter={st} />
+                <FEdit label="Bairro" fkey="bairro" source={tomador} setter={st} />
+                <FEdit label="CEP" fkey="cep" source={tomador} setter={st} />
+                <FEdit label="Município" fkey="municipio" source={tomador} setter={st} />
+                <FEdit label="UF" fkey="uf" source={tomador} setter={st} />
+                <FEdit label="Site" fkey="site" source={tomador} setter={st} />
               </div>
             </Section>
           </div>
