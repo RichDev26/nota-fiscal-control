@@ -18,7 +18,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     });
 
     if (!nota) return NextResponse.json({ error: 'Nota não encontrada' }, { status: 404 });
-    return NextResponse.json(nota);
+
+    // Não trafegar pdfData (base64 do PDF) na resposta — pode ser vários MB.
+    // O PDF é servido via GET /api/notas/[id]/pdf
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { pdfData: _pdf, ...notaSemPdf } = nota as typeof nota & { pdfData?: string };
+    return NextResponse.json({ ...notaSemPdf, hasPdf: !!nota.pdfData });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: 'Erro ao buscar nota' }, { status: 500 });

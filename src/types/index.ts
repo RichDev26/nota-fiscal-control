@@ -73,6 +73,8 @@ export interface NotaFiscal {
   valorUnitario?: number | null;
   observacoes?: string | null;
   arquivoPdfUrl?: string | null;
+  pdfData?: string | null;
+  hasPdf?: boolean;
   tags?: string | null;
   prestadorId?: string | null;
   tomadorId?: string | null;

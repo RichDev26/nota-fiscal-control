@@ -29,7 +29,7 @@ export default function NovaNotaPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [extractError, setExtractError] = useState('');
   const [extracted, setExtracted] = useState<PdfExtractResult | null>(null);
-  const [arquivoPdfUrl, setArquivoPdfUrl] = useState('');
+  const [pdfData, setPdfData] = useState(''); // base64 — persistido no banco
 
   // Form state
   const [form, setForm] = useState<Record<string, string>>({ status: 'lancada', tipo: 'NFS-e' });
@@ -53,11 +53,11 @@ export default function NovaNotaPage() {
       const fd = new FormData();
       fd.append('file', pdfFile);
       const res = await fetch('/api/pdf-extract', { method: 'POST', body: fd });
-      const data: PdfExtractResult & { arquivoPdfUrl?: string; error?: string } = await res.json();
+      const data: PdfExtractResult & { pdfData?: string; error?: string } = await res.json();
 
       if (data.error) { setExtractError(data.error); setPdfStep('upload'); return; }
 
-      setArquivoPdfUrl(data.arquivoPdfUrl || '');
+      setPdfData(data.pdfData || '');
       setExtracted(data);
 
       setForm({
@@ -130,7 +130,7 @@ export default function NovaNotaPage() {
     try {
       const payload = {
         ...form,
-        arquivoPdfUrl: arquivoPdfUrl || undefined,
+        pdfData: pdfData || undefined,
         prestador: Object.values(prestador).some(Boolean) ? prestador : undefined,
         tomador: Object.values(tomador).some(Boolean) ? tomador : undefined,
       };

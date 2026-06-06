@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 import { extractFromPdfBuffer } from '@/lib/pdf-extractor';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,18 +16,17 @@ export async function POST(req: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // Save file
-    const uploadsDir = join(process.cwd(), 'public', 'uploads');
-    await mkdir(uploadsDir, { recursive: true });
-    const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-    const filepath = join(uploadsDir, filename);
-    await writeFile(filepath, buffer);
+    // Armazena o PDF como base64 para ser salvo no banco de dados.
+    // Isso garante que o PDF persiste mesmo no Railway (filesystem efêmero).
+    const pdfData = buffer.toString('base64');
 
     const result = await extractFromPdfBuffer(buffer);
 
     return NextResponse.json({
       ...result,
-      arquivoPdfUrl: `/uploads/${filename}`,
+      pdfData,
+      // arquivoPdfUrl continua para compatibilidade, mas o viewer usará /api/notas/[id]/pdf
+      arquivoPdfUrl: `/api/notas/pdf-preview`,
     });
   } catch (err) {
     console.error('PDF extract error:', err);

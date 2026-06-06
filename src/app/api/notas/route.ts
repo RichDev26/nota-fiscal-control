@@ -73,7 +73,7 @@ const NOTA_FIELDS = new Set([
   'naturezaOperacao','situacaoTributariaIssqn','localPrestacao','situacaoNfse',
   'observacoesFiscais','regimeTributario','indicacaoRetencao','observacoesAutenticidade',
   'municipioEmissor','codigoServico','quantidade','valorUnitario',
-  'observacoes','arquivoPdfUrl','tags','prestadorId','tomadorId','notaSubstitutivaId',
+  'observacoes','arquivoPdfUrl','pdfData','tags','prestadorId','tomadorId','notaSubstitutivaId',
 ]);
 
 export async function POST(req: NextRequest) {

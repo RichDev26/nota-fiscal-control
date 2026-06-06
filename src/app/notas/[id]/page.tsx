@@ -154,8 +154,10 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
   const sp2 = (k: string, v: string) => setPrestador(p => ({ ...p, [k]: v || null }));
   const st = (k: string, v: string) => setTomador(p => ({ ...p, [k]: v || null }));
 
-  // Painel do PDF — fica sticky à direita quando há arquivo
-  const PdfPanel = () => nota.arquivoPdfUrl ? (
+  // Painel do PDF — fica sticky à direita quando há PDF salvo
+  const hasPdf = !!(nota.hasPdf || nota.arquivoPdfUrl);
+  const pdfSrc = `/api/notas/${nota.id}/pdf`;
+  const PdfPanel = () => hasPdf ? (
     <div className="w-[460px] shrink-0 hidden xl:block">
       <div className="card overflow-hidden sticky top-4" style={{ height: 'calc(100vh - 88px)' }}>
         <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
@@ -163,13 +165,13 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
             <FileText size={14} className="text-red-500" />
             <span className="text-sm font-semibold text-gray-700">PDF Original</span>
           </div>
-          <a href={nota.arquivoPdfUrl} target="_blank" rel="noopener noreferrer"
+          <a href={pdfSrc} target="_blank" rel="noopener noreferrer"
             className="text-xs text-blue-600 hover:underline flex items-center gap-1">
             <ExternalLink size={11} /> Nova aba
           </a>
         </div>
         <iframe
-          src={nota.arquivoPdfUrl}
+          src={pdfSrc}
           className="w-full h-full border-0"
           title="PDF da nota fiscal"
         />
@@ -215,11 +217,11 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
         {success && <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg p-3 text-sm"><CheckCircle size={15} />{success}</div>}
 
         {/* PDF link mobile (só aparece em telas menores que xl onde o painel lateral não existe) */}
-        {nota.arquivoPdfUrl && (
+        {hasPdf && (
           <div className="xl:hidden card p-3 flex items-center gap-3">
             <FileText size={16} className="text-red-500 shrink-0" />
             <span className="text-sm text-gray-600 flex-1">PDF Original Anexado</span>
-            <a href={nota.arquivoPdfUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
+            <a href={pdfSrc} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
               <ExternalLink size={13} /> Abrir PDF
             </a>
           </div>
