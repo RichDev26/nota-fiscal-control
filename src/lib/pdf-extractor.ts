@@ -1,4 +1,5 @@
 import type { PdfExtractResult } from '@/types';
+import type { DocumentBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 
 // ─── Prompt para Claude ───────────────────────────────────────────────────────
 
@@ -108,25 +109,26 @@ async function extractWithAI(buffer: Buffer): Promise<PdfExtractResult> {
 
   const pdfBase64 = buffer.toString('base64');
 
+  // DocumentBlockParam é suportado nativamente pelo SDK (@anthropic-ai/sdk ^0.100.1)
+  const docBlock: DocumentBlockParam = {
+    type: 'document',
+    source: {
+      type: 'base64',
+      media_type: 'application/pdf',
+      data: pdfBase64,
+    },
+  };
+
+  console.log('[PDF Extractor] Enviando PDF diretamente ao Claude (document API)...');
+
   const response = await client.messages.create({
     model: 'claude-3-5-sonnet-20241022',
     max_tokens: 2048,
     messages: [{
       role: 'user',
       content: [
-        // Envia o PDF diretamente — Claude lê o layout real sem perder tabelas
-        {
-          type: 'document',
-          source: {
-            type: 'base64',
-            media_type: 'application/pdf',
-            data: pdfBase64,
-          },
-        } as any,
-        {
-          type: 'text',
-          text: EXTRACTION_PROMPT,
-        },
+        docBlock,
+        { type: 'text', text: EXTRACTION_PROMPT },
       ],
     }],
   });
@@ -134,18 +136,25 @@ async function extractWithAI(buffer: Buffer): Promise<PdfExtractResult> {
   const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
   if (!raw) throw new Error('Resposta vazia da IA');
 
+  console.log('[PDF Extractor] Resposta da IA (primeiros 300 chars):', raw.slice(0, 300));
+
   // Remove possível bloco markdown caso a IA coloque ```json ... ```
-  const cleaned = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/, '');
+  const cleaned = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/, '').trim();
 
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(cleaned);
   } catch {
+    // Tenta extrair JSON da resposta mesmo com texto antes/depois
     const m = cleaned.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('JSON não encontrado na resposta da IA');
+    if (!m) {
+      console.error('[PDF Extractor] JSON não encontrado. Resposta completa:', raw.slice(0, 500));
+      throw new Error('JSON não encontrado na resposta da IA');
+    }
     parsed = JSON.parse(m[0]);
   }
 
+  console.log('[PDF Extractor] Campos extraídos:', Object.keys(parsed).filter(k => parsed[k] != null && parsed[k] !== 'null').join(', '));
   return mapParsedToResult(parsed);
 }
 
@@ -367,31 +376,39 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   const raw = (await pdfParse(buffer)).text ?? '';
   const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').normalize('NFC');
 
+  console.log('[PDF Extractor] Texto extraído (primeiros 800 chars):\n', text.slice(0, 800));
+
   const result: PdfExtractResult = {};
   const V = '([\\d.]+,[\\d]{2})';
 
+  // ── Número da nota: rótulo pode estar longe do valor (tabela 2 colunas)
   result.numeroNf = extractReg(text, [
-    /N[uú]mero\s+da\s+nota\s{0,30}(\d+)/i,
+    /N[uú]mero\s+da\s+nota[\s\S]{0,80}?(\b\d{1,6}\b)/i,
     /NFS?-?e\s+N[º°o]?\s*\.?\s*(\d+)/i,
     /N[uú]mero\s+(?:da\s+)?NFS?-?e[:\s]+(\d+)/i,
   ]);
+
+  // ── Número do RPS
   result.numeroRps = extractReg(text, [
-    /N[uú]mero\s+do\s+RPS\s{0,30}(\d+)/i,
+    /N[uú]mero\s+do\s+RPS[\s\S]{0,60}?(\b\d+\b)/i,
     /N[uú]mero\s+do\s+RPS[:\s]+(\d+)/i,
   ]);
+
+  // ── Código de verificação: alfanumérico ≥6 chars após o rótulo
   result.codigoVerificacao = extractReg(text, [
-    /C[oó]digo\s+de\s+[Vv]erifica[çc][ãa]o\s{0,30}([A-Z0-9]{6,20})/i,
-    /C[oó]digo\s+de\s+[Vv]erifica[çc][ãa]o[:\s]+([A-Z0-9]{6,20})/i,
-    /\b([A-Z]{3,}[0-9]+[A-Z0-9]{1,12})\b/,
+    /C[oó]digo\s+de\s+[Vv]erifica[çc][ãa]o[\s\S]{0,80}?([A-Z0-9]{6,20})/i,
+    /[Vv]erifica[çc][ãa]o[\s\S]{0,40}?([A-Z]{2,}[0-9]{1,}[A-Z0-9]{1,})/,
   ]);
+
+  // ── Datas — o conteúdo pode estar na mesma linha ou na próxima
   result.dataEmissao = extractDateReg(text, [
-    /Data\s+da\s+emiss[ãa]o\s+da\s+nota\s{0,30}(\d{2}\/\d{2}\/\d{4})/i,
-    /Data\s+(?:e\s+Hora\s+)?(?:de\s+)?[Ee]miss[ãa]o[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
+    /Data\s+da\s+emiss[ãa]o\s+da\s+nota[\s\S]{0,60}?(\d{2}\/\d{2}\/\d{4})/i,
+    /Data\s+(?:e\s+Hora\s+)?(?:de\s+)?[Ee]miss[ãa]o[\s\S]{0,40}?(\d{2}\/\d{2}\/\d{4})/i,
   ]);
   result.dataFatoGerador = extractDateReg(text, [
-    /Data\s+do\s+fato\s+gerador\s{0,30}(\d{2}\/\d{2}\/\d{4})/i,
-    /[Ff]ato\s+[Gg]erador[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
+    /[Ff]ato\s+[Gg]erador[\s\S]{0,60}?(\d{2}\/\d{2}\/\d{4})/i,
   ]);
+
   result.tipo = extractReg(text, [/(NFS?-?e)/i, /(NF-?e)/i]) ?? 'NFS-e';
   result.municipioEmissor = extractReg(text, [/MUNIC[IÍ]PIO\s+DE\s+([A-ZÀ-Ú][^\n\r,]+)/i])?.trim();
   result.of = extractReg(text, [/\bOF\s*[:\s.]+(\d{6,})/i]);
@@ -487,18 +504,22 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
 // ─── Exportação principal ─────────────────────────────────────────────────────
 
 export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractResult> {
-  // Usa IA com PDF nativo (muito mais preciso que converter para texto)
-  if (process.env.ANTHROPIC_API_KEY) {
+  const hasKey = !!process.env.ANTHROPIC_API_KEY;
+  console.log('[PDF Extractor] ANTHROPIC_API_KEY presente:', hasKey);
+
+  // Tier 1: PDF direto ao Claude (lê layout real, sem perder tabelas)
+  if (hasKey) {
     try {
       const result = await extractWithAI(buffer);
-      console.log('[PDF Extractor] IA com PDF nativo usada com sucesso');
+      console.log('[PDF Extractor] ✓ IA com PDF nativo usada com sucesso. numeroNf:', result.numeroNf, '| dataEmissao:', result.dataEmissao);
       return result;
     } catch (err) {
-      console.warn('[PDF Extractor] Falha na IA, usando regex como fallback:', err);
+      console.error('[PDF Extractor] ✗ Falha na IA com PDF nativo:', (err as Error).message);
+      console.warn('[PDF Extractor] Caindo para regex como fallback...');
     }
   }
 
-  // Fallback: regex (sem API key ou se IA falhou)
-  console.log('[PDF Extractor] Usando regex (sem ANTHROPIC_API_KEY ou fallback)');
+  // Tier 2: Regex sobre texto extraído pelo pdf-parse
+  console.log('[PDF Extractor] Usando regex (sem API key ou IA falhou)');
   return extractWithRegex(buffer);
 }
