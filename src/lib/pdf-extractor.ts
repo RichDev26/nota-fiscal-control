@@ -247,9 +247,9 @@ async function extractWithAIPdf(buffer: Buffer): Promise<PdfExtractResult> {
     source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') },
   };
 
-  console.log('[PDF] Tier1: enviando PDF direto ao Claude Sonnet...');
+  console.log('[PDF] Tier1: enviando PDF direto ao Claude Haiku...');
   const response = await client.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-5-haiku-20241022',
     max_tokens: 2048,
     messages: [{ role: 'user', content: [docBlock, { type: 'text', text: EXTRACTION_PROMPT }] }],
   });
@@ -278,9 +278,9 @@ OBSERVAÇÃO: O texto abaixo foi extraído automaticamente do PDF e pode estar c
 TEXTO EXTRAÍDO DO PDF:
 ${truncated}`;
 
-  console.log('[PDF] Tier2: enviando texto ao Claude Sonnet...');
+  console.log('[PDF] Tier2: enviando texto ao Claude Haiku...');
   const response = await client.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-5-haiku-20241022',
     max_tokens: 2048,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -373,47 +373,50 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   const result: PdfExtractResult = {};
   const V = '([\\d.]+,[\\d]{2})';
 
-  // ── NF: rótulo + número na próxima linha (evita "Página 1/1")
+  // ────────────────────────────────────────────────────────────────────
+  // ATENÇÃO: neste PDF os valores aparecem ANTES dos labels (texto invertido).
+  // Ex: "FHZSBPES7\n187\nData da emissão...\nCódigo de verificação..."
+  // A estratégia: extrair o bloco do cabeçalho (entre "TOMADOR DE SERVIÇOS"
+  // e "Data da emissão") onde ficam os valores avulsos.
+  // ────────────────────────────────────────────────────────────────────
+
+  // Bloco de cabeçalho: valores entre os títulos das seções e os labels
+  const headerBlock = (() => {
+    // Pega o texto ANTES dos labels de data (onde ficam os valores invertidos)
+    const labelIdx = text.search(/Data\s+da\s+emiss[ãa]o\s+da\s+nota/i);
+    return labelIdx > 0 ? text.slice(0, labelIdx) : text.slice(0, 500);
+  })();
+
+  // ── NF: número isolado no bloco de cabeçalho (só dígitos na linha, sem "/")
   result.numeroNf = (() => {
-    // Procura "Número da nota" e captura o número que segue na próxima linha não vazia
-    const section = text.match(/N[uú]mero\s+da\s+nota[^\n]*\n([\s\S]{0,150})/i)?.[1] ?? '';
-    // Primeiro número isolado que não seja parte de "X/Y" (ex: 1/1) e tenha pelo menos 1 dígito
-    const m = section.match(/^\s*(\d+)\s*$/m)  // linha com só dígitos
-      ?? section.match(/\b(\d{2,6})\b(?!\s*\/)/); // ou número ≥2 dígitos não seguido de /
-    return m?.[1];
+    // Linhas com APENAS dígitos (1 a 6) — ex: "187" sozinho na linha
+    const standaloneNums = headerBlock.match(/^[ \t]*(\d{1,6})[ \t]*$/mg) ?? [];
+    // Descarta "1/1" (já filtrado pois exige linha com só dígitos)
+    return standaloneNums.map(s => s.trim()).filter(s => /^\d+$/.test(s)).pop();
   })();
 
-  // ── RPS
-  result.numeroRps = (() => {
-    const section = text.match(/N[uú]mero\s+do\s+RPS[^\n]*\n([\s\S]{0,80})/i)?.[1] ?? '';
-    return section.match(/^\s*(\d+)\s*$/m)?.[1]
-      ?? section.match(/\b(\d{1,6})\b(?!\s*\/)/)?.[1];
-  })();
-
-  // ── Código de verificação: busca código MAIÚSCULO com pelo menos 1 dígito
-  //    Usa janela grande mas exige padrão estrito (não casa com nomes de cidades)
+  // ── Código de verificação: sequência MAIÚSCULA com letra+dígito no cabeçalho
   result.codigoVerificacao = (() => {
+    // Primeiro: tenta achar no bloco invertido (valor vem antes do label)
+    const codesInHeader = (headerBlock.match(/^[ \t]*([A-Z][A-Z0-9]{5,19})[ \t]*$/mg) ?? [])
+      .map(s => s.trim())
+      .filter(s => /[A-Z]/.test(s) && /[0-9]/.test(s));
+    if (codesInHeader.length > 0) return codesInHeader[0];
+    // Segundo: tenta após o label (texto não-invertido)
     const idx = text.search(/C[oó]digo\s+de\s+verifica[çc][ãa]o/i);
     if (idx < 0) return undefined;
-    // Pega até 300 chars depois do rótulo e procura código maiúsculo c/ dígito
-    const window = text.slice(idx, idx + 300);
-    // Código válido: só maiúsculas e dígitos, min 6 chars, DEVE ter pelo menos uma letra E um dígito
-    const m = window.match(/\b([A-Z][A-Z0-9]{5,19})\b/g);
-    if (!m) return undefined;
-    // Filtra: deve conter pelo menos 1 letra e 1 dígito
-    return m.find(c => /[A-Z]/.test(c) && /[0-9]/.test(c));
+    const after = text.slice(idx + 30, idx + 200);
+    return after.match(/\b([A-Z][A-Z0-9]{5,19})\b/g)
+      ?.find(c => /[A-Z]/.test(c) && /[0-9]/.test(c));
   })();
 
-  // ── Datas
-  result.dataEmissao = extractDate(text, [
-    /Data\s+da\s+emiss[ãa]o\s+da\s+nota[^\n]*\n[^\n]*?(\d{2}\/\d{2}\/\d{4})/i,
-    /Data\s+da\s+emiss[ãa]o\s+da\s+nota\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
-    /[Ee]miss[ãa]o[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
-  ]);
-  result.dataFatoGerador = extractDate(text, [
-    /[Ff]ato\s+[Gg]erador[^\n]*\n[^\n]*?(\d{2}\/\d{2}\/\d{4})/i,
-    /[Ff]ato\s+[Gg]erador[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
-  ]);
+  // ── Datas: nos PDFs invertidos as datas aparecem antes dos labels.
+  //    Pega todas as datas do texto e associa pela posição.
+  const allDates = Array.from(text.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)).map(m => m[1]);
+  // As duas primeiras datas no texto são emissão e fato gerador (nessa ordem)
+  const toISO = (d?: string) => { const m = d?.match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : undefined; };
+  result.dataEmissao    = toISO(allDates[0]);
+  result.dataFatoGerador = toISO(allDates[1]);
 
   result.tipo = extractReg(text, [/(NFS?-?e)/i, /(NF-?e)/i]) ?? 'NFS-e';
   result.municipioEmissor = extractReg(text, [/MUNIC[IÍ]PIO\s+DE\s+([A-ZÀ-Ú][^\n\r,]+)/i])?.trim();
@@ -425,16 +428,50 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   ]);
 
   // ── Blocos de prestador/tomador
+  //    No texto invertido, "PRESTADOR" e "TOMADOR" ainda aparecem como cabeçalhos
+  //    mas o conteúdo está misturado. Tentamos extrair os blocos mesmo assim.
   const pStart = text.search(/PRESTADOR\s+DE\s+SERVI[ÇC]OS/i);
   const tStart = text.search(/TOMADOR\s+DE\s+SERVI[ÇC]OS/i);
   const dStart = text.search(/DISCRIMINA[ÇC][AÃ]O\s+DOS\s+SERVI[ÇC]OS/i);
 
-  result.prestador = parsePessoa(
-    pStart >= 0 ? text.slice(pStart, tStart > pStart ? tStart : pStart + 1500) : text.slice(0, 1500)
-  );
-  result.tomador = parsePessoa(
-    tStart >= 0 ? text.slice(tStart, dStart > tStart ? dStart : tStart + 1500) : ''
-  );
+  // Extrai bloco e parseia
+  const pBlock = pStart >= 0 ? text.slice(pStart, tStart > pStart ? tStart : pStart + 2000) : text.slice(0, 2000);
+  const tBlock = tStart >= 0 ? text.slice(tStart, dStart > tStart ? dStart : tStart + 2000) : '';
+
+  result.prestador = parsePessoa(pBlock);
+  result.tomador   = parsePessoa(tBlock);
+
+  // ── CNPJs: no texto invertido os CNPJs aparecem sem prefixo "CPF/CNPJ:"
+  //    Se o parsePessoa não encontrou, pega todos os CNPJs do texto e distribui
+  const allCnpjs = Array.from(text.matchAll(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/g)).map(m => m[1]);
+  console.log('[PDF] CNPJs encontrados no texto:', allCnpjs);
+  if (allCnpjs.length > 0 && !result.tomador?.cpfCnpj) {
+    result.tomador = { ...result.tomador, cpfCnpj: allCnpjs[0] } as typeof result.tomador;
+  }
+  if (allCnpjs.length > 1 && !result.prestador?.cpfCnpj) {
+    result.prestador = { ...result.prestador, cpfCnpj: allCnpjs[1] } as typeof result.prestador;
+  }
+
+  // ── Nomes (razão social/fantasia) sem label — busca pelo padrão de empresa
+  //    No texto invertido os nomes aparecem antes dos labels
+  const findCompanyName = (block: string, knownCnpj?: string) => {
+    // Linhas que parecem razão social: Ltda, S.A., ME, ou MAIÚSCULAS sem números
+    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 4);
+    // Prefere linha com Ltda./S.A./ME
+    const withSuffix = lines.find(l => /\b(Ltda|S\.A\.|ME|EIRELI|EPP)\b/i.test(l) && !/^(CPF|CNPJ|Inscri|Ende|Bairro|CEP|Muni|UF|Tel|Cel|Email|Site|Nome|Fone|Data|Valor|Código)/i.test(l));
+    if (withSuffix) return withSuffix;
+    // Ou linha em MAIÚSCULAS que parece nome fantasia
+    return lines.find(l => /^[A-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ][A-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ\s]{4,}$/.test(l) && !/^(PRESTADOR|TOMADOR|DISCRIMINA|MUNICIPIO|OUTRAS|RETEN|FORMA|VALORES|DADOS)/i.test(l));
+  };
+
+  if (!result.prestador?.nomeRazaoSocial && pBlock) {
+    const name = findCompanyName(pBlock);
+    if (name) result.prestador = { ...result.prestador, nomeRazaoSocial: name } as typeof result.prestador;
+  }
+  if (!result.tomador?.nomeRazaoSocial && tBlock) {
+    const name = findCompanyName(tBlock);
+    if (name) result.tomador = { ...result.tomador, nomeRazaoSocial: name } as typeof result.tomador;
+  }
 
   // ── Valores
   result.valorBruto   = extractFloat(text, [new RegExp(`Valor\\s+bruto\\s*[=:]\\s*R\\$\\s*${V}`, 'i')]);
