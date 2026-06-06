@@ -92,10 +92,20 @@ function parsePessoa(block: string): PdfExtractResult['prestador'] {
   const SKIP_RE = /^(Endere[çc]o|Complemento|Bairro|CEP|Munic[ií]pio|UF[\s:]|E-?mail|Telefone|Celular|Site|CPF|CNPJ|Inscri[çc]|N[uú]mero[\s:]|Fone[\s:]|Nome\s*\/|Raz[ãa]o|PRESTADOR|TOMADOR|Discrimina|Outras|Reten|Forma|Dados|Valores|Identifica|P[áa]gina|Central|MUNICIPIO|Se[çc][ãa]o|Verifica|DISCRIMINA|RETEN|FORMA)/i;
 
   // ── Razão Social ─────────────────────────────────────────────────────────────
+  // Padrão 1: label e nome na mesma linha
+  // Padrão 2: label na linha, nome na linha seguinte (NFS-e Dourados e similares)
   let nomeRazaoSocial = clean(extractReg(block, [
-    /Nome\s*\/?\s*Raz[ãa]o\s+[Ss]ocial[:\s]+([^\n\t]+)/i,
-    /Raz[ãa]o\s+[Ss]ocial[:\s]+([^\n\t]+)/i,
+    /Nome\s*\/?\s*Raz[ãa]o\s+[Ss]ocial[:\s]+([^\n\t]{3,})/i,
+    /Raz[ãa]o\s+[Ss]ocial[:\s]+([^\n\t]{3,})/i,
   ]));
+  if (!nomeRazaoSocial) {
+    // Linha seguinte ao label
+    const nextLine = block.match(/Nome\s*\/?\s*Raz[ãa]o\s+[Ss]ocial[^\n]*\n\s*([^\n\t]{3,80})/i)?.[1]?.trim()
+      ?? block.match(/Raz[ãa]o\s+[Ss]ocial[^\n]*\n\s*([^\n\t]{3,80})/i)?.[1]?.trim();
+    if (nextLine && !SKIP_RE.test(nextLine) && !nextLine.includes(':')) {
+      nomeRazaoSocial = clean(nextLine);
+    }
+  }
   // Fallback: linha com sufixo empresarial
   if (!nomeRazaoSocial) {
     const m = block.match(
@@ -105,7 +115,14 @@ function parsePessoa(block: string): PdfExtractResult['prestador'] {
   }
 
   // ── Nome Fantasia ─────────────────────────────────────────────────────────────
-  let nomeFantasia = clean(extractReg(block, [/Nome\s+[Ff]antasia[:\s]+([^\n\t]+)/i]));
+  // Mesma lógica: mesma linha ou linha seguinte
+  let nomeFantasia = clean(extractReg(block, [/Nome\s+[Ff]antasia[:\s]+([^\n\t]{2,})/i]));
+  if (!nomeFantasia) {
+    const nextLine = block.match(/Nome\s+[Ff]antasia[^\n]*\n\s*([^\n\t]{2,80})/i)?.[1]?.trim();
+    if (nextLine && !SKIP_RE.test(nextLine) && !nextLine.includes(':')) {
+      nomeFantasia = clean(nextLine);
+    }
+  }
   if (!nomeFantasia) {
     // Linha toda em maiúsculas (≥ 2 palavras, não é header conhecido)
     const capsLines = block.match(/^[ \t]*([A-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ][A-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ\s\.]{4,60})[ \t]*$/mg) ?? [];
@@ -140,6 +157,12 @@ function parsePessoa(block: string): PdfExtractResult['prestador'] {
     /Inscri[çc][ãa]o\s+[Mm]unicipal[:\s]*([\d.\-\/]+)/i,
     /Insc\.?\s+[Mm]un\.?[:\s]*([\d.\-\/]+)/i,
   ])?.trim();
+  // Mesma linha ou linha seguinte
+  if (!inscricaoMunicipal) {
+    const nextLine = block.match(/Inscri[çc][ãa]o\s+[Mm]unicipal[^\n]*\n\s*([\d.\-\/]+)/i)?.[1]?.trim()
+      ?? block.match(/Insc\.?\s*[Mm]un\.?[^\n]*\n\s*([\d.\-\/]+)/i)?.[1]?.trim();
+    if (nextLine && nextLine.length >= 4) inscricaoMunicipal = nextLine;
+  }
   // Fallback: número isolado de 5-12 dígitos (não é CNPJ, não é telefone, não é CEP)
   if (!inscricaoMunicipal || inscricaoMunicipal.length < 2) {
     const numLines = block.match(/^[ \t]*(\d{5,12})[ \t]*$/mg) ?? [];
@@ -317,27 +340,67 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
     /Municipio\s+Emissor[:\s]+([^\n]+)/i,
   ])?.trim();
 
-  // ── Datas (por label, depois fallback posicional) ─────────────────────────
+  // ── Datas (por label, depois multiline, depois posicional) ───────────────
+  // Em NFS-e com layout de tabela, o label fica numa linha e a data na próxima.
+  const allDatesGlobal = Array.from(text.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)).map(m => ({
+    date: m[1], idx: m.index!,
+  }));
+
+  // Encontra a primeira data que aparece APÓS um label de emissão
   result.dataEmissao = (() => {
-    const byLabel = extractReg(text, [
-      /Data\s+da\s+emiss[ãa]o\s+da\s+nota[:\s]*(\d{2}\/\d{2}\/\d{4})/i,
-      /Data\s+d[ae]\s+emiss[ãa]o[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
-      /Emiss[ãa]o[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
+    // 1) Label e data na mesma linha
+    const sameLine = extractReg(text, [
+      /Data\s+da\s+emiss[ãa]o\s+da\s+nota\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /Data\s+d[ae]\s+emiss[ãa]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /Emiss[ãa]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
     ]);
-    if (byLabel) return toISO(byLabel);
-    // Primeira data no texto
-    return toISO(text.match(/(\d{2}\/\d{2}\/\d{4})/)?.[1]);
+    if (sameLine) return toISO(sameLine);
+
+    // 2) Data na linha seguinte ao label (padrão NFS-e com tabelas)
+    const nextLinePatterns = [
+      /Data\s+da\s+emiss[ãa]o\s+da\s+nota[^\n\d]*\n[^\n]*?(\d{2}\/\d{2}\/\d{4})/i,
+      /Data\s+d[ae]\s+emiss[ãa]o[^\n\d]*\n[^\n]*?(\d{2}\/\d{2}\/\d{4})/i,
+    ];
+    for (const p of nextLinePatterns) {
+      const m = text.match(p);
+      if (m?.[1]) return toISO(m[1]);
+    }
+
+    // 3) Primeira data que aparece após o label no texto (busca por posição)
+    const labelIdx = text.search(/Data\s+da\s+emiss[ãa]o|Emiss[ãa]o\s+da\s+nota/i);
+    if (labelIdx >= 0) {
+      const after = allDatesGlobal.find(d => d.idx > labelIdx);
+      if (after) return toISO(after.date);
+    }
+
+    // 4) Fallback: primeira data após os headers da nota (número da nota/RPS)
+    const headerEnd = text.search(/C[oó]digo\s+de\s+[Vv]erifica[çc][ãa]o|PRESTADOR\s+DE/i);
+    if (headerEnd > 0) {
+      const firstAfterHeader = allDatesGlobal.find(d => d.idx < headerEnd);
+      if (firstAfterHeader) return toISO(firstAfterHeader.date);
+    }
+
+    return toISO(allDatesGlobal[0]?.date);
   })();
 
   result.dataFatoGerador = (() => {
-    const byLabel = extractReg(text, [
-      /Data\s+d[oa]\s+[Ff]ato\s+[Gg]erador[:\s]*(\d{2}\/\d{2}\/\d{4})/i,
-      /[Ff]ato\s+[Gg]erador[:\s]+(\d{2}\/\d{2}\/\d{4})/i,
+    const sameLine = extractReg(text, [
+      /Data\s+d[oa]\s+[Ff]ato\s+[Gg]erador\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /[Ff]ato\s+[Gg]erador\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
     ]);
-    if (byLabel) return toISO(byLabel);
-    // Segunda data no texto
-    const allDates = Array.from(text.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)).map(m => m[1]);
-    return allDates[1] ? toISO(allDates[1]) : undefined;
+    if (sameLine) return toISO(sameLine);
+
+    const nextLine = text.match(/Data\s+d[oa]\s+[Ff]ato\s+[Gg]erador[^\n\d]*\n[^\n]*?(\d{2}\/\d{2}\/\d{4})/i)?.[1]
+      ?? text.match(/[Ff]ato\s+[Gg]erador[^\n\d]*\n[^\n]*?(\d{2}\/\d{2}\/\d{4})/i)?.[1];
+    if (nextLine) return toISO(nextLine);
+
+    const labelIdx = text.search(/Fato\s+[Gg]erador/i);
+    if (labelIdx >= 0) {
+      const after = allDatesGlobal.find(d => d.idx > labelIdx);
+      if (after) return toISO(after.date);
+    }
+
+    return allDatesGlobal[1] ? toISO(allDatesGlobal[1].date) : undefined;
   })();
 
   // ── OF / OS ───────────────────────────────────────────────────────────────
@@ -370,44 +433,84 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   const pStart  = text.search(/PRESTADOR\s+DE\s+SERVI[ÇC]OS/i);
 
   // ── DIVISÃO PRESTADOR / TOMADOR ──────────────────────────────────────────────
-  // NFS-e garbled: PRESTADOR e TOMADOR aparecem juntos no início.
-  // Divisão correta: usar posição do 2º "Endereço:"
+  // Estratégia 1 (prioridade): Usar os headers de seção quando disponíveis.
+  // Estratégia 2 (fallback): Layout "garbled" onde os dados das duas seções
+  //   aparecem misturados antes dos headers — usa posições de "Endereço:".
+
   const enderecoIdxs = Array.from(text.matchAll(/Endere[çc]o\s*:/gi)).map(m => m.index!);
-  console.log('[PDF] enderecoIdxs:', enderecoIdxs, '| tStart:', tStart, '| dStart:', dStart);
+  console.log('[PDF] enderecoIdxs:', enderecoIdxs, '| pStart:', pStart, '| tStart:', tStart, '| dStart:', dStart);
 
   let pBlock: string;
   let tBlock: string;
 
-  if (enderecoIdxs.length >= 2) {
+  const discEnd = dStart >= 0 ? dStart : text.length;
+
+  if (pStart >= 0 && tStart >= 0 && pStart < tStart) {
+    // Caso normal: PRESTADOR antes de TOMADOR — divide pelos headers
+    pBlock = text.slice(pStart, tStart);
+    tBlock = text.slice(tStart, discEnd);
+  } else if (pStart >= 0 && tStart < 0) {
+    // Só achou PRESTADOR
+    pBlock = text.slice(pStart, discEnd);
+    tBlock = '';
+  } else if (tStart >= 0 && pStart < 0) {
+    // Só achou TOMADOR — prestador provavelmente antes dele
+    tBlock = text.slice(tStart, discEnd);
+    pBlock = text.slice(0, tStart);
+  } else if (tStart >= 0 && pStart >= 0 && pStart > tStart) {
+    // Invertido (TOMADOR antes de PRESTADOR no texto — layout incomum)
+    tBlock = text.slice(tStart, pStart);
+    pBlock = text.slice(pStart, discEnd);
+  } else if (enderecoIdxs.length >= 2) {
+    // Fallback garbled: usa 2º "Endereço:" como divisor
+    // Os dados de prestador vêm ANTES do 2º Endereço, tomador DEPOIS
     const splitAt = enderecoIdxs[1];
-    tBlock = text.slice(tStart >= 0 ? tStart : 0, splitAt);
-    pBlock = text.slice(splitAt, dStart > splitAt ? dStart : splitAt + 1500);
+    pBlock = text.slice(0, splitAt + 600);   // inclui o endereço do prestador
+    tBlock = text.slice(splitAt, discEnd);
   } else if (enderecoIdxs.length === 1) {
-    tBlock = text.slice(tStart >= 0 ? tStart : 0, enderecoIdxs[0] + 300);
-    pBlock = text.slice(enderecoIdxs[0], dStart > enderecoIdxs[0] ? dStart : enderecoIdxs[0] + 1500);
+    // Apenas 1 endereço — prestador fica antes, tomador depois
+    pBlock = text.slice(0, enderecoIdxs[0] + 400);
+    tBlock = text.slice(enderecoIdxs[0] + 400, discEnd);
   } else {
-    // Fallback: divide pela posição de TOMADOR / DISCRIMINAÇÃO
-    pBlock = pStart >= 0
-      ? text.slice(pStart, tStart > pStart ? tStart : pStart + 2000)
-      : text.slice(0, tStart > 0 ? tStart : 2000);
-    tBlock = tStart >= 0
-      ? text.slice(tStart, dStart > tStart ? dStart : tStart + 2000)
-      : '';
+    // Último recurso: divide ao meio
+    const mid = Math.floor(text.length / 2);
+    pBlock = text.slice(0, mid);
+    tBlock = text.slice(mid, discEnd);
   }
 
   result.prestador = parsePessoa(pBlock) ?? undefined;
   result.tomador   = parsePessoa(tBlock) ?? undefined;
 
-  // ── CNPJs globais (fallback) ──────────────────────────────────────────────────
-  const allCnpjs = Array.from(text.matchAll(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/g)).map(m => m[1]);
-  console.log('[PDF] CNPJs encontrados:', allCnpjs);
+  // ── CNPJs globais (fallback posicional) ──────────────────────────────────────
+  // Atribui CNPJs com base na posição dentro dos blocos já identificados.
+  const allCnpjsPos = Array.from(text.matchAll(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/g))
+    .map(m => ({ cnpj: m[1], idx: m.index! }));
+  const allCpfsPos  = Array.from(text.matchAll(/(\d{3}\.\d{3}\.\d{3}-\d{2})/g))
+    .map(m => ({ cnpj: m[1], idx: m.index! }));
+  const allDocPos = [...allCnpjsPos, ...allCpfsPos].sort((a, b) => a.idx - b.idx);
 
-  // O primeiro CNPJ que aparece no texto costuma ser o do tomador (topo da NFS-e)
-  if (allCnpjs.length >= 1 && !result.tomador?.cpfCnpj) {
-    result.tomador = { ...result.tomador, cpfCnpj: allCnpjs[0] };
+  console.log('[PDF] Documentos encontrados:', allDocPos.map(d => `${d.cnpj}@${d.idx}`));
+
+  if (!result.prestador?.cpfCnpj) {
+    // Procura CNPJ dentro do bloco prestador
+    const pOffset = pStart >= 0 ? pStart : 0;
+    const pEnd    = tStart > pOffset ? tStart : pOffset + pBlock.length;
+    const pDoc = allDocPos.find(d => d.idx >= pOffset && d.idx < pEnd);
+    if (pDoc) result.prestador = { ...result.prestador, cpfCnpj: pDoc.cnpj };
+    else if (allDocPos.length >= 1 && pStart >= 0 && pStart < tStart) {
+      // Primeiro CNPJ do texto quando o prestador aparece antes do tomador
+      result.prestador = { ...result.prestador, cpfCnpj: allDocPos[0].cnpj };
+    }
   }
-  if (allCnpjs.length >= 2 && !result.prestador?.cpfCnpj) {
-    result.prestador = { ...result.prestador, cpfCnpj: allCnpjs[1] };
+  if (!result.tomador?.cpfCnpj) {
+    const tOffset = tStart >= 0 ? tStart : 0;
+    const tDoc = allDocPos.find(d => d.idx >= tOffset && d.idx < discEnd);
+    if (tDoc) result.tomador = { ...result.tomador, cpfCnpj: tDoc.cnpj };
+    else if (allDocPos.length >= 2) {
+      result.tomador = { ...result.tomador, cpfCnpj: allDocPos[1].cnpj };
+    } else if (allDocPos.length >= 1 && !result.prestador?.cpfCnpj) {
+      result.tomador = { ...result.tomador, cpfCnpj: allDocPos[0].cnpj };
+    }
   }
 
   // ── DISCRIMINAÇÃO DOS SERVIÇOS ────────────────────────────────────────────────

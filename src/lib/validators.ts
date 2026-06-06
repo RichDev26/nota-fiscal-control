@@ -48,6 +48,13 @@ export function formatarMoeda(valor: number | null | undefined): string {
 
 export function formatarData(data: string | Date | null | undefined): string {
   if (!data) return '—';
+  // Strings ISO "YYYY-MM-DD": parse manualmente para evitar shift de fuso horário.
+  // new Date('2026-05-19') interpreta como UTC 00:00, que em UTC-3 vira 18/05!
+  if (typeof data === 'string') {
+    const iso = data.split('T')[0];
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  }
   const d = typeof data === 'string' ? new Date(data) : data;
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('pt-BR');

@@ -285,13 +285,49 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
 
           {/* RESUMO */}
           <SectionCard title="RESUMO" icon={DollarSign} iconColor="bg-green-50 text-green-600">
+            {/* Identificação rápida */}
+            <div className="grid grid-cols-2 gap-3 mb-4 pb-4 border-b border-gray-50">
+              {nota.numeroNf && <InfoRow label="Número NF" value={`NF ${nota.numeroNf}`} />}
+              {nota.tipo     && <InfoRow label="Tipo"      value={nota.tipo} />}
+              {nota.dataEmissao    && <InfoRow label="Emissão"    value={formatarData(nota.dataEmissao)} />}
+              {nota.dataVencimento && <InfoRow label="Vencimento" value={formatarData(nota.dataVencimento)} />}
+              {nota.dataRecebimento && <InfoRow label="Recebimento" value={formatarData(nota.dataRecebimento)} />}
+              {nota.municipioEmissor && <InfoRow label="Município"  value={nota.municipioEmissor} />}
+              {nota.numeroRps && <InfoRow label="RPS" value={nota.numeroRps} />}
+            </div>
+
+            {/* Partes envolvidas */}
+            {(prestadorNome !== '—' || tomadorNome !== '—') && (
+              <div className="grid grid-cols-1 gap-3 mb-4 pb-4 border-b border-gray-50">
+                {prestadorNome !== '—' && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Prestador</p>
+                    <p className="text-sm text-gray-800 font-semibold">{prestadorNome}</p>
+                    {nota.prestador?.cpfCnpj && (
+                      <p className="text-xs text-gray-400 mt-0.5">{nota.prestador.cpfCnpj}</p>
+                    )}
+                  </div>
+                )}
+                {tomadorNome !== '—' && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Tomador</p>
+                    <p className="text-sm text-gray-800 font-semibold">{tomadorNome}</p>
+                    {nota.tomador?.cpfCnpj && (
+                      <p className="text-xs text-gray-400 mt-0.5">{nota.tomador.cpfCnpj}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Valores */}
             <div className="space-y-0">
               <MoneyRow label="Valor Bruto" value={nota.valorBruto} big />
               <MoneyRow label="Valor Líquido" value={nota.valorLiquido} big green />
               {nota.valorIss != null && <MoneyRow label="ISS" value={nota.valorIss} />}
               {nota.valorLiquidoAntecipacao != null && <MoneyRow label="Valor Líquido Antecipado" value={nota.valorLiquidoAntecipacao} green />}
               {nota.valorTotalTributosAntecipacao != null && <MoneyRow label="Encargos Antecipação" value={nota.valorTotalTributosAntecipacao} />}
-              {nota.baseCalculo != null && <MoneyRow label="Base de Cálculo" value={nota.baseCalculo} />}
+              {nota.baseCalculo != null && nota.baseCalculo !== nota.valorBruto && <MoneyRow label="Base de Cálculo" value={nota.baseCalculo} />}
               {nota.aliquota != null && (
                 <div className="flex items-center justify-between py-2.5 border-b border-gray-50">
                   <span className="text-sm text-gray-500">Alíquota ISS</span>
@@ -299,6 +335,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
                 </div>
               )}
             </div>
+
             {/* Retenções federais */}
             {(nota.ir || nota.pisPasep || nota.cofins || nota.inss || nota.csll || nota.outrasRetencoes) && (
               <div className="mt-4 pt-4 border-t border-gray-50">
@@ -313,14 +350,6 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
                 </div>
               </div>
             )}
-            <div className="mt-4 pt-4 border-t border-gray-50 grid grid-cols-2 gap-3">
-              {nota.dataEmissao    && <InfoRow label="Emissão"     value={formatarData(nota.dataEmissao)} />}
-              {nota.dataVencimento && <InfoRow label="Vencimento"  value={formatarData(nota.dataVencimento)} />}
-              {nota.dataRecebimento && <InfoRow label="Recebimento" value={formatarData(nota.dataRecebimento)} />}
-              {nota.municipioEmissor && <InfoRow label="Município"  value={nota.municipioEmissor} />}
-              {nota.numeroRps       && <InfoRow label="RPS"         value={nota.numeroRps} />}
-              {nota.tipo            && <InfoRow label="Tipo"        value={nota.tipo} />}
-            </div>
           </SectionCard>
 
           {/* PRESTADOR */}
