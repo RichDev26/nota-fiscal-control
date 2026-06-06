@@ -1,5 +1,4 @@
 import type { PdfExtractResult } from '@/types';
-import type { DocumentBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 
 // ─── Prompt de extração ───────────────────────────────────────────────────────
 
@@ -242,9 +241,14 @@ async function extractWithAIPdf(buffer: Buffer): Promise<PdfExtractResult> {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const docBlock: DocumentBlockParam = {
-    type: 'document',
-    source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') },
+  // Estrutura aceita nativamente pelo SDK @anthropic-ai/sdk ^0.100.1 (sem import de subpath)
+  const docBlock = {
+    type: 'document' as const,
+    source: {
+      type: 'base64' as const,
+      media_type: 'application/pdf' as const,
+      data: buffer.toString('base64'),
+    },
   };
 
   console.log('[PDF] Tier1: enviando PDF direto ao Claude Haiku...');
