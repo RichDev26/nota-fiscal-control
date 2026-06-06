@@ -4,7 +4,7 @@ import type { PdfExtractResult } from '@/types';
 
 const EXTRACTION_PROMPT = `Você é um parser especializado em NFS-e (Nota Fiscal de Serviços Eletrônica) brasileira.
 
-Analise o texto de PDF abaixo e retorne um JSON com todos os campos encontrados.
+Analise a NFS-e neste PDF e retorne um JSON com TODOS os campos visíveis.
 
 REGRAS OBRIGATÓRIAS:
 1. Retorne SOMENTE o JSON puro, sem markdown, sem \`\`\`json, sem explicações
@@ -12,12 +12,16 @@ REGRAS OBRIGATÓRIAS:
 3. Datas: "YYYY-MM-DD" (ex: "2026-05-19") — ignore o horário
 4. Valores monetários: número decimal sem símbolo (ex: 50000.00 para R$ 50.000,00)
 5. Alíquota: número percentual (ex: 5 para 5%)
-6. NUNCA invente dados — use apenas o que está no texto
-7. Para números zero explícitos no texto (R$ 0,00), use 0, não null
+6. NUNCA invente dados — use apenas o que está visível no PDF
+7. Para números zero explícitos no PDF (R$ 0,00), use 0, não null
+8. "Número da nota" aparece no cabeçalho superior (campo "Número da nota" ou "N° da NFS-e")
+9. "Número do RPS" aparece no cabeçalho superior (campo "Número do RPS")
+10. "Código de verificação" é um código alfanumérico no cabeçalho (ex: FHZSBPES7)
+11. CNPJ do prestador e do tomador estão nas seções "PRESTADOR DE SERVIÇOS" e "TOMADOR DE SERVIÇOS"
 
 ESTRUTURA DO JSON (use exatamente estas chaves):
 {
-  "numeroNf": "número da nota fiscal",
+  "numeroNf": "número da nota fiscal (campo Número da nota ou N° da NFS-e)",
   "numeroRps": "número do RPS ou null",
   "codigoVerificacao": "código alfanumérico (ex: FHZSBPES7) ou null",
   "dataEmissao": "YYYY-MM-DD ou null",
@@ -55,7 +59,7 @@ ESTRUTURA DO JSON (use exatamente estas chaves):
   "simplesNacional": true_ou_false_ou_null,
   "observacoesFiscais": "observações fiscais ou null",
   "prestador": {
-    "nomeRazaoSocial": "razão social ou null",
+    "nomeRazaoSocial": "razão social completa ou null",
     "nomeFantasia": "nome fantasia ou null",
     "cpfCnpj": "XX.XXX.XXX/XXXX-XX ou null",
     "inscricaoMunicipal": "número ou null",
@@ -73,7 +77,7 @@ ESTRUTURA DO JSON (use exatamente estas chaves):
     "site": "site ou null"
   },
   "tomador": {
-    "nomeRazaoSocial": "razão social ou null",
+    "nomeRazaoSocial": "razão social completa ou null",
     "nomeFantasia": "nome fantasia ou null",
     "cpfCnpj": "XX.XXX.XXX/XXXX-XX ou null",
     "inscricaoMunicipal": "número ou null",
@@ -90,23 +94,40 @@ ESTRUTURA DO JSON (use exatamente estas chaves):
     "celular": "celular ou null",
     "site": "site ou null"
   }
-}
+}`;
 
-TEXTO DO PDF:
-`;
+// ─── Extração via IA (Claude com PDF nativo — sem conversão para texto) ───────
+//
+// Em vez de converter o PDF em texto (o que perde a estrutura de tabelas),
+// enviamos o PDF diretamente para o Claude via API de documentos.
+// O Claude consegue ler o layout real do PDF e extrair todos os campos.
 
-// ─── Extração via IA (Claude) ─────────────────────────────────────────────────
-
-async function extractWithAI(text: string): Promise<PdfExtractResult> {
+async function extractWithAI(buffer: Buffer): Promise<PdfExtractResult> {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+  const pdfBase64 = buffer.toString('base64');
+
   const response = await client.messages.create({
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-3-5-sonnet-20241022',
     max_tokens: 2048,
     messages: [{
       role: 'user',
-      content: EXTRACTION_PROMPT + text.slice(0, 12000),
+      content: [
+        // Envia o PDF diretamente — Claude lê o layout real sem perder tabelas
+        {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: pdfBase64,
+          },
+        } as any,
+        {
+          type: 'text',
+          text: EXTRACTION_PROMPT,
+        },
+      ],
     }],
   });
 
@@ -120,7 +141,6 @@ async function extractWithAI(text: string): Promise<PdfExtractResult> {
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    // Tenta extrair JSON da resposta
     const m = cleaned.match(/\{[\s\S]*\}/);
     if (!m) throw new Error('JSON não encontrado na resposta da IA');
     parsed = JSON.parse(m[0]);
@@ -212,7 +232,7 @@ function mapParsedToResult(p: Record<string, unknown>): PdfExtractResult {
     simplesNacional: bool(p.simplesNacional),
     prestador: pessoa(p.prestador),
     tomador:   pessoa(p.tomador),
-    fontesExtracao: ['ia-claude'],
+    fontesExtracao: ['ia-claude-pdf'],
   };
 
   // ── Nome organizador sugerido ──────────────────────────────────────────────
@@ -269,7 +289,7 @@ function mapParsedToResult(p: Record<string, unknown>): PdfExtractResult {
   return result;
 }
 
-// ─── Extração por regex (fallback) ────────────────────────────────────────────
+// ─── Extração por regex (fallback sem API key) ────────────────────────────────
 
 function extractReg(text: string, patterns: RegExp[]): string | undefined {
   for (const p of patterns) {
@@ -384,8 +404,6 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   const pStart   = text.search(/PRESTADOR\s+DE\s+SERVI[ÇC]OS/i);
   const tStart   = text.search(/TOMADOR\s+DE\s+SERVI[ÇC]OS/i);
   const dStart   = text.search(/DISCRIMINA[ÇC][AÃ]O\s+DOS\s+SERVI[ÇC]OS/i);
-  const retStart = text.search(/RETEN[ÇC][ÕO]ES\s+FEDERAIS/i);
-  const outStart = text.search(/OUTRAS\s+INFORMA[ÇC][ÕO]ES/i);
 
   result.prestador = parsePessoa(pStart >= 0 ? text.slice(pStart, tStart > pStart ? tStart : pStart + 1500) : text.slice(0, 1500));
   result.tomador   = parsePessoa(tStart >= 0 ? text.slice(tStart, dStart > tStart ? dStart : tStart + 1500) : '');
@@ -393,8 +411,11 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   result.valorBruto  = extractFloatReg(text, [new RegExp(`Valor\\s+bruto\\s*[=:]\\s*R\\$\\s*${V}`, 'i')]);
   result.valorLiquido = extractFloatReg(text, [new RegExp(`Valor\\s+l[íi]quido\\s*[=:]\\s*R\\$\\s*${V}`, 'i')]);
   result.baseCalculo  = extractFloatReg(text, [new RegExp(`Base\\s+de\\s+[Cc][áa]lculo\\s*\\(?R\\$\\)?[:\\s]*${V}`, 'i')]);
-  result.aliquota     = extractFloatReg(text, [/Al[íi]quota\s+do\s+ISS\s+([\d,]+)\s*%/i, /[\d.]+,\d{2}x([\d,]+)\s*[= ]/]);
-  result.valorIss     = extractFloatReg(text, [new RegExp(`Valor\\s+ISS\\s*\\(?R\\$\\)?[:\\s]*${V}`, 'i'), /[\d.]+,\d{2}x[\d,]+\s*=\s*([\d.]+,\d{2})/]);
+  result.aliquota     = extractFloatReg(text, [/Al[íi]quota\s+do\s+ISS\s+([\d,]+)\s*%/i]);
+  result.valorIss     = extractFloatReg(text, [new RegExp(`Valor\\s+ISS\\s*\\(?R\\$\\)?[:\\s]*${V}`, 'i')]);
+
+  const retStart = text.search(/RETEN[ÇC][ÕO]ES\s+FEDERAIS/i);
+  const outStart = text.search(/OUTRAS\s+INFORMA[ÇC][ÕO]ES/i);
 
   const retBlock = (() => {
     if (retStart < 0) return '';
@@ -413,15 +434,6 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   result.ir              = extractFloatReg(retBlock, retP('\\bIR\\b'));
   result.csll            = extractFloatReg(retBlock, retP('CSLL'));
   result.outrasRetencoes = extractFloatReg(retBlock, retP('Outras\\s+Reten[çc][õo]es'));
-
-  if (retBlock && result.pisPasep == null && result.cofins == null) {
-    const vals = Array.from(retBlock.matchAll(/R\$\s*([\d.]+,\d{2})/g))
-      .map(m => { const n = parseFloat(m[1].replace(/\./g, '').replace(',', '.')); return isNaN(n) ? undefined : n; });
-    if (vals.length >= 6) {
-      result.pisPasep ??= vals[0]; result.cofins ??= vals[1]; result.inss ??= vals[2];
-      result.ir ??= vals[3]; result.csll ??= vals[4]; result.outrasRetencoes ??= vals[5];
-    }
-  }
 
   result.naturezaOperacao = extractReg(outStart >= 0 ? text.slice(outStart) : text.slice(-2000), [
     /[Nn]atureza\s+da\s+[Oo]pera[çc][ãa]o[:\s]+([^\n]+)/i,
@@ -475,23 +487,18 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
 // ─── Exportação principal ─────────────────────────────────────────────────────
 
 export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractResult> {
-  // Extrai texto bruto do PDF
-  const pdfParse = (await import('pdf-parse')).default;
-  const raw = (await pdfParse(buffer)).text ?? '';
-  const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').normalize('NFC');
-
-  // Tenta IA primeiro (se API key disponível)
+  // Usa IA com PDF nativo (muito mais preciso que converter para texto)
   if (process.env.ANTHROPIC_API_KEY) {
     try {
-      const result = await extractWithAI(text);
-      console.log('[PDF Extractor] IA usada com sucesso');
+      const result = await extractWithAI(buffer);
+      console.log('[PDF Extractor] IA com PDF nativo usada com sucesso');
       return result;
     } catch (err) {
       console.warn('[PDF Extractor] Falha na IA, usando regex como fallback:', err);
     }
   }
 
-  // Fallback: regex
+  // Fallback: regex (sem API key ou se IA falhou)
   console.log('[PDF Extractor] Usando regex (sem ANTHROPIC_API_KEY ou fallback)');
   return extractWithRegex(buffer);
 }
