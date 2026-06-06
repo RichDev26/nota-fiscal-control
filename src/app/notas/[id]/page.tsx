@@ -154,35 +154,33 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
   const sp2 = (k: string, v: string) => setPrestador(p => ({ ...p, [k]: v || null }));
   const st = (k: string, v: string) => setTomador(p => ({ ...p, [k]: v || null }));
 
-  // Painel do PDF — fica sticky à direita quando há PDF salvo
+  // Painel do PDF — preenche todo o espaço restante à direita
   const hasPdf = !!(nota.hasPdf || nota.arquivoPdfUrl);
   const pdfSrc = `/api/notas/${nota.id}/pdf`;
   const PdfPanel = () => hasPdf ? (
-    <div className="w-[460px] shrink-0 hidden xl:block">
-      <div className="card overflow-hidden sticky top-4" style={{ height: 'calc(100vh - 88px)' }}>
-        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <FileText size={14} className="text-red-500" />
-            <span className="text-sm font-semibold text-gray-700">PDF Original</span>
-          </div>
-          <a href={pdfSrc} target="_blank" rel="noopener noreferrer"
-            className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-            <ExternalLink size={11} /> Nova aba
-          </a>
+    <div className="flex-1 min-w-0 hidden xl:flex flex-col sticky top-0 border-l border-gray-200" style={{ height: '100vh' }}>
+      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200 shrink-0">
+        <div className="flex items-center gap-2">
+          <FileText size={14} className="text-red-500" />
+          <span className="text-sm font-semibold text-gray-700">PDF Original</span>
         </div>
-        <iframe
-          src={pdfSrc}
-          className="w-full h-full border-0"
-          title="PDF da nota fiscal"
-        />
+        <a href={pdfSrc} target="_blank" rel="noopener noreferrer"
+          className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+          <ExternalLink size={11} /> Nova aba
+        </a>
       </div>
+      <iframe
+        src={pdfSrc}
+        className="w-full flex-1 border-0"
+        title="PDF da nota fiscal"
+      />
     </div>
   ) : null;
 
   return (
-    <div className="p-6 flex gap-6 items-start max-w-[1400px]">
+    <div className="flex gap-0 items-start">
       {/* ── Coluna principal (esquerda) ─────────────────────────────────── */}
-      <div className="flex-1 min-w-0 space-y-5">
+      <div className={`space-y-5 p-6 ${hasPdf ? 'w-[600px] shrink-0' : 'flex-1 min-w-0'}`}>
 
         {/* Header */}
         <div className="flex items-center justify-between gap-4">
