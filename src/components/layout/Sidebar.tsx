@@ -2,67 +2,67 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  LayoutDashboard,
-  FileText,
-  PlusCircle,
-  BarChart2,
-  Receipt,
-  ChevronRight,
-} from 'lucide-react';
+import { LayoutDashboard, FileText, BarChart2, Receipt, Settings } from 'lucide-react';
 
 const links = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/notas', label: 'Notas Fiscais', icon: FileText },
-  { href: '/notas/nova', label: 'Nova Nota', icon: PlusCircle },
-  { href: '/relatorios', label: 'Relatórios', icon: BarChart2 },
-  { href: '/impostos', label: 'Impostos', icon: Receipt },
+  { href: '/',           label: 'Dashboard',  icon: LayoutDashboard },
+  { href: '/notas',      label: 'Notas',       icon: FileText },
+  { href: '/relatorios', label: 'Relatórios',  icon: BarChart2 },
+  { href: '/impostos',   label: 'Impostos',    icon: Receipt },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-60 bg-gray-900 text-white flex flex-col shrink-0 h-full">
+    <aside className="w-52 bg-white border-r border-gray-100 flex flex-col shrink-0 h-full hidden md:flex">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-gray-700/50">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center shrink-0">
-            <FileText size={16} />
+      <div className="px-5 py-5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center shrink-0 shadow-sm shadow-blue-200">
+            <FileText size={15} className="text-white" />
           </div>
           <div>
-            <p className="font-bold text-sm leading-tight">NF Control</p>
-            <p className="text-xs text-gray-400">Notas Fiscais</p>
+            <p className="font-bold text-gray-900 text-sm leading-tight">NF Control</p>
+            <p className="text-[10px] text-gray-400 font-medium">Notas Fiscais</p>
           </div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-2 space-y-0.5">
         {links.map(({ href, label, icon: Icon }) => {
           const active =
-            href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
+            href === '/'
+              ? pathname === '/'
+              : pathname === href || pathname.startsWith(href + '/');
           return (
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                 active
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
               }`}
             >
               <Icon size={17} className="shrink-0" />
-              <span className="flex-1">{label}</span>
-              {active && <ChevronRight size={14} className="opacity-60" />}
+              <span>{label}</span>
+              {active && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />
+              )}
             </Link>
           );
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-gray-700/50">
-        <p className="text-xs text-gray-500">v1.0.0 • NF Control</p>
+      {/* Bottom */}
+      <div className="px-3 py-3 border-t border-gray-50">
+        <button className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-semibold text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-all">
+          <Settings size={16} />
+          <span>Configurações</span>
+        </button>
+        <p className="text-[10px] text-gray-300 px-3 mt-2">v1.0.0</p>
       </div>
     </aside>
   );

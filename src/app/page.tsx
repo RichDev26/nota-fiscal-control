@@ -2,236 +2,171 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  FileText, TrendingUp, DollarSign, AlertCircle,
-  PlusCircle, BarChart2, Receipt, Clock, CheckCircle, XCircle
-} from 'lucide-react';
-import { formatarMoeda } from '@/lib/validators';
+import { PlusCircle, FileText, ChevronRight, TrendingUp, DollarSign, Receipt, Zap } from 'lucide-react';
+import { formatarMoeda, formatarData } from '@/lib/validators';
 import { STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { NotaFiscal } from '@/types';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
-} from 'recharts';
 
-interface DashStats {
-  notas: NotaFiscal[];
-  total: number;
-}
+const USER_NAME = 'Richard';
 
 export default function Dashboard() {
-  const [data, setData] = useState<DashStats | null>(null);
+  const [notas, setNotas]   = useState<NotaFiscal[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/notas?por=1000')
+    fetch('/api/notas?por=200&ordenarPor=createdAt&ordem=desc')
       .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
+      .then(d => { setNotas(d.notas || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
-  const notas = data?.notas || [];
+  // Notas do mês atual
+  const now = new Date();
+  const notasMes = notas.filter(n => {
+    if (!n.dataEmissao) return false;
+    const d = new Date(n.dataEmissao);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
 
-  const totalBruto = notas.reduce((s, n) => s + (n.valorBruto || 0), 0);
-  const totalLiquido = notas.reduce((s, n) => s + (n.valorLiquido || 0), 0);
-  const totalIss = notas.reduce((s, n) => s + (n.valorIss || 0), 0);
-  const totalAntecipado = notas.reduce((s, n) => s + (n.valorLiquidoAntecipacao || 0), 0);
+  const brutoBruto  = notasMes.reduce((s, n) => s + (n.valorBruto  ?? 0), 0);
+  const brutoliq    = notasMes.reduce((s, n) => s + (n.valorLiquido ?? 0), 0);
+  const totalGeral  = notas.reduce((s, n) => s + (n.valorBruto ?? 0), 0);
 
-  const porStatus: Record<string, number> = {};
-  for (const n of notas) porStatus[n.status] = (porStatus[n.status] || 0) + 1;
+  const recentes = notas.slice(0, 5);
 
-  const porMes: Record<string, { total: number; qtd: number }> = {};
-  for (const n of notas) {
-    if (n.dataEmissao) {
-      const d = new Date(n.dataEmissao);
-      const mes = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-      if (!porMes[mes]) porMes[mes] = { total: 0, qtd: 0 };
-      porMes[mes].total += n.valorBruto || 0;
-      porMes[mes].qtd += 1;
-    }
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
-  const chartData = Object.entries(porMes)
-    .sort(([a], [b]) => {
-      const [am, ay] = a.split('/');
-      const [bm, by] = b.split('/');
-      return Number(ay + am) - Number(by + bm);
-    })
-    .slice(-6)
-    .map(([mes, v]) => ({ mes, total: v.total, qtd: v.qtd }));
-
-  // Top tomadores
-  const tomadorMap: Record<string, { total: number; qtd: number }> = {};
-  for (const n of notas) {
-    const nome = n.tomador?.nomeRazaoSocial || n.tomador?.nomeFantasia || 'Não informado';
-    if (!tomadorMap[nome]) tomadorMap[nome] = { total: 0, qtd: 0 };
-    tomadorMap[nome].total += n.valorBruto || 0;
-    tomadorMap[nome].qtd += 1;
-  }
-  const topTomadores = Object.entries(tomadorMap)
-    .sort(([, a], [, b]) => b.total - a.total)
-    .slice(0, 5);
-
-  const recentes = [...notas]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
-
-  if (loading) return (
-    <div className="flex items-center justify-center h-full">
-      <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full" />
-    </div>
-  );
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="p-5 md:p-8 max-w-2xl mx-auto space-y-8">
+
+      {/* ── Saudação ── */}
+      <div className="flex items-start justify-between gap-4 pt-2">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{notas.length} nota{notas.length !== 1 ? 's' : ''} no sistema</p>
+          <p className="text-gray-400 text-sm font-medium">Bem-vindo de volta</p>
+          <h1 className="text-3xl font-bold text-gray-900 mt-0.5">
+            Olá, {USER_NAME} 👋
+          </h1>
         </div>
-        <div className="flex gap-2">
-          <Link href="/notas/nova" className="btn-primary">
-            <PlusCircle size={16} /> Nova Nota
-          </Link>
-          <Link href="/relatorios" className="btn-secondary">
-            <BarChart2 size={16} /> Relatório
-          </Link>
+        <Link href="/notas/nova" className="btn-primary btn-lg shrink-0 hidden sm:flex">
+          <PlusCircle size={18} /> Nova Nota
+        </Link>
+      </div>
+
+      {/* ── Botão mobile ── */}
+      <Link href="/notas/nova" className="btn-primary w-full justify-center py-4 rounded-2xl text-base sm:hidden">
+        <PlusCircle size={20} /> + Nova Nota
+      </Link>
+
+      {/* ── Stats deste mês ── */}
+      <div>
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
+          Notas deste mês — {now.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="card p-4 text-center">
+            <p className="text-2xl font-bold text-gray-900">{notasMes.length}</p>
+            <p className="text-xs text-gray-400 mt-1 font-medium">Notas</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-lg font-bold text-gray-900 leading-tight">{formatarMoeda(brutoBruto)}</p>
+            <p className="text-xs text-gray-400 mt-1 font-medium">Bruto</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-lg font-bold text-green-700 leading-tight">{formatarMoeda(brutoliq)}</p>
+            <p className="text-xs text-gray-400 mt-1 font-medium">Líquido</p>
+          </div>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={<DollarSign size={20} className="text-blue-600" />} label="Total Bruto" value={formatarMoeda(totalBruto)} bg="bg-blue-50" />
-        <StatCard icon={<TrendingUp size={20} className="text-green-600" />} label="Total Líquido" value={formatarMoeda(totalLiquido)} bg="bg-green-50" />
-        <StatCard icon={<Receipt size={20} className="text-orange-600" />} label="Total ISS" value={formatarMoeda(totalIss)} bg="bg-orange-50" />
-        <StatCard icon={<FileText size={20} className="text-purple-600" />} label="Antecipado" value={formatarMoeda(totalAntecipado)} bg="bg-purple-50" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Gráfico Evolução */}
-        <div className="card p-5 lg:col-span-2">
-          <h2 className="text-sm font-bold text-gray-700 mb-4">Evolução por Mês (Valor Bruto)</h2>
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => formatarMoeda(v)} />
-                <Bar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
-              Sem dados para exibir
+      {/* ── Atalhos rápidos ── */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { href: '/relatorios', icon: TrendingUp, label: 'Relatório',  color: 'text-blue-600 bg-blue-50' },
+          { href: '/impostos',   icon: Receipt,    label: 'Impostos',   color: 'text-orange-600 bg-orange-50' },
+          { href: '/notas?status=incompleta', icon: FileText, label: 'Incompletas', color: 'text-amber-600 bg-amber-50' },
+        ].map(({ href, icon: Icon, label, color }) => (
+          <Link key={href} href={href}
+            className="card-hover p-4 flex flex-col items-center gap-2 text-center">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${color}`}>
+              <Icon size={18} />
             </div>
-          )}
+            <span className="text-xs font-semibold text-gray-600">{label}</span>
+          </Link>
+        ))}
+      </div>
+
+      {/* ── Últimas notas ── */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-bold text-gray-900">Últimas Notas</p>
+          <Link href="/notas" className="text-sm text-blue-600 font-semibold hover:underline flex items-center gap-0.5">
+            Ver todas <ChevronRight size={14} />
+          </Link>
         </div>
 
-        {/* Status */}
-        <div className="card p-5">
-          <h2 className="text-sm font-bold text-gray-700 mb-4">Por Status</h2>
+        {recentes.length === 0 ? (
+          <div className="card p-10 flex flex-col items-center gap-4 text-center">
+            <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center">
+              <FileText size={28} className="text-gray-300" />
+            </div>
+            <div>
+              <p className="font-semibold text-gray-500">Nenhuma nota ainda</p>
+              <p className="text-sm text-gray-400 mt-1">Lance sua primeira nota fiscal agora</p>
+            </div>
+            <Link href="/notas/nova" className="btn-primary">
+              <PlusCircle size={16} /> Lançar Nota
+            </Link>
+          </div>
+        ) : (
           <div className="space-y-2">
-            {Object.entries(porStatus).length === 0 ? (
-              <p className="text-sm text-gray-400">Sem notas</p>
-            ) : (
-              Object.entries(porStatus).map(([s, q]) => (
-                <div key={s} className="flex items-center justify-between">
-                  <span className={`badge ${STATUS_COLORS[s] || 'bg-gray-100 text-gray-600'}`}>
-                    {STATUS_LABELS[s] || s}
-                  </span>
-                  <span className="text-sm font-semibold text-gray-700">{q}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Tomadores */}
-        <div className="card p-5">
-          <h2 className="text-sm font-bold text-gray-700 mb-4">Top Tomadores</h2>
-          {topTomadores.length === 0 ? (
-            <p className="text-sm text-gray-400">Sem dados</p>
-          ) : (
-            <div className="space-y-3">
-              {topTomadores.map(([nome, v]) => (
-                <div key={nome} className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{nome}</p>
-                    <p className="text-xs text-gray-500">{v.qtd} nota{v.qtd !== 1 ? 's' : ''}</p>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-900 shrink-0">{formatarMoeda(v.total)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Notas Recentes */}
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-gray-700">Notas Recentes</h2>
-            <Link href="/notas" className="text-xs text-blue-600 hover:underline">Ver todas</Link>
-          </div>
-          {recentes.length === 0 ? (
-            <p className="text-sm text-gray-400">Nenhuma nota lançada ainda.</p>
-          ) : (
-            <div className="space-y-2">
-              {recentes.map(n => (
-                <Link key={n.id} href={`/notas/${n.id}`} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 transition-colors group">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
-                    <FileText size={14} className="text-blue-600" />
+            {recentes.map(n => {
+              const tomador = n.tomador?.nomeRazaoSocial || n.tomador?.nomeFantasia || '';
+              const nomeCurto = tomador.replace(/\s+(Ltda\.?|S\.A\.?|ME\.?|EIRELI)\.?$/i, '').slice(0, 22);
+              return (
+                <Link key={n.id} href={`/notas/${n.id}`}
+                  className="card-hover flex items-center gap-4 p-4">
+                  <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
+                    <FileText size={17} className="text-blue-500" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-600">
+                    <p className="font-semibold text-gray-900 truncate">
                       {n.nomeOrganizador || `NF ${n.numeroNf || 'S/N'}`}
                     </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {n.tomador?.nomeRazaoSocial || 'Tomador não informado'}
+                    <p className="text-sm text-gray-400 truncate">
+                      {nomeCurto || 'Sem tomador'}{n.dataEmissao ? ` · ${formatarData(n.dataEmissao)}` : ''}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold text-gray-900">{formatarMoeda(n.valorBruto)}</p>
-                    <span className={`badge ${STATUS_COLORS[n.status] || 'bg-gray-100'} text-xs`}>
+                    <p className="font-bold text-gray-900">{formatarMoeda(n.valorBruto)}</p>
+                    <span className={`badge ${STATUS_COLORS[n.status] || 'bg-gray-100 text-gray-500'} text-[10px] mt-0.5`}>
                       {STATUS_LABELS[n.status] || n.status}
                     </span>
                   </div>
                 </Link>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Total geral ── */}
+      {notas.length > 0 && (
+        <div className="card p-5 flex items-center gap-4 bg-gradient-to-r from-blue-600 to-blue-700 border-0">
+          <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
+            <DollarSign size={22} className="text-white" />
+          </div>
+          <div>
+            <p className="text-blue-100 text-sm font-medium">Total geral em notas</p>
+            <p className="text-white text-2xl font-bold">{formatarMoeda(totalGeral)}</p>
+          </div>
         </div>
-      </div>
-
-      {/* Atalhos */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { href: '/notas/nova', icon: PlusCircle, label: 'Lançar Nota', color: 'text-blue-600 bg-blue-50' },
-          { href: '/relatorios', icon: BarChart2, label: 'Relatório', color: 'text-green-600 bg-green-50' },
-          { href: '/impostos', icon: Receipt, label: 'Impostos', color: 'text-orange-600 bg-orange-50' },
-          { href: '/notas?status=incompleta', icon: AlertCircle, label: 'Incompletas', color: 'text-yellow-600 bg-yellow-50' },
-        ].map(({ href, icon: Icon, label, color }) => (
-          <Link key={href} href={href} className="card p-4 flex flex-col items-center gap-2 hover:shadow-md transition-shadow cursor-pointer">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
-              <Icon size={20} />
-            </div>
-            <span className="text-xs font-semibold text-gray-700">{label}</span>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ icon, label, value, bg }: { icon: React.ReactNode; label: string; value: string; bg: string }) {
-  return (
-    <div className="card p-4 flex items-center gap-4">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bg} shrink-0`}>{icon}</div>
-      <div>
-        <p className="text-xs text-gray-500 font-medium">{label}</p>
-        <p className="text-lg font-bold text-gray-900 leading-tight">{value}</p>
-      </div>
+      )}
     </div>
   );
 }

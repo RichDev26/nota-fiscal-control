@@ -1,48 +1,82 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Upload, FileText, Pencil, ChevronRight, ChevronLeft,
-  Loader2, AlertCircle, CheckCircle, Save, Sparkles, X,
+  Loader2, CheckCircle, Save, Sparkles, AlertCircle,
+  Building2, DollarSign, Tag, ClipboardCheck,
 } from 'lucide-react';
 import type { PdfExtractResult } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Mode = null | 'pdf' | 'manual';
-type PdfStep = 'upload' | 'extracting' | 'review';
-type ManualStep = 'essentials' | 'details' | 'finalize';
+type PdfStep   = 'upload' | 'extracting' | 'check' | 'nome' | 'confirmar';
+type ManualStep = 'basicos' | 'partes' | 'valores' | 'nome' | 'confirmar';
 
-const fmt = (v: unknown) => (v != null ? String(v) : '');
+const STATUS_OPTS = [
+  { v: 'lancada',   l: 'Lançada' },
+  { v: 'recebida',  l: 'Recebida' },
+  { v: 'rascunho',  l: 'Rascunho' },
+  { v: 'incompleta',l: 'Incompleta' },
+  { v: 'antecipada',l: 'Antecipada' },
+];
+
+const fmt = (v: unknown) => (v != null && v !== undefined ? String(v) : '');
+const brl = (v: unknown) => {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+  if (isNaN(n)) return '';
+  return `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+};
+const dataBR = (v: string) => {
+  if (!v) return '';
+  try { return new Date(v + 'T12:00:00').toLocaleDateString('pt-BR'); } catch { return v; }
+};
+
+// PDF step → número visual
+const PDF_STEP_NUM: Record<PdfStep, number> = {
+  upload: 1, extracting: 2, check: 3, nome: 4, confirmar: 5,
+};
+// Manual step → número visual
+const MANUAL_STEP_NUM: Record<ManualStep, number> = {
+  basicos: 1, partes: 2, valores: 3, nome: 4, confirmar: 5,
+};
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function NovaNotaPage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [mode, setMode] = useState<Mode>(null);
-  const [pdfStep, setPdfStep] = useState<PdfStep>('upload');
-  const [manualStep, setManualStep] = useState<ManualStep>('essentials');
+  const [mode, setMode]           = useState<Mode>(null);
+  const [pdfStep, setPdfStep]     = useState<PdfStep>('upload');
+  const [manualStep, setManualStep] = useState<ManualStep>('basicos');
 
-  // PDF state
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfFile, setPdfFile]     = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [extractError, setExtractError] = useState('');
   const [extracted, setExtracted] = useState<PdfExtractResult | null>(null);
-  const [pdfData, setPdfData] = useState(''); // base64 — persistido no banco
+  const [pdfData, setPdfData]     = useState('');
 
-  // Form state
-  const [form, setForm] = useState<Record<string, string>>({ status: 'lancada', tipo: 'NFS-e' });
+  const [form, setForm]           = useState<Record<string, string>>({ status: 'lancada', tipo: 'NFS-e' });
   const [prestador, setPrestador] = useState<Record<string, string>>({});
-  const [tomador, setTomador] = useState<Record<string, string>>({});
+  const [tomador, setTomador]     = useState<Record<string, string>>({});
 
-  // Save state
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  const sf = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
-  const sp = (k: string, v: string) => setPrestador(p => ({ ...p, [k]: v }));
-  const st = (k: string, v: string) => setTomador(p => ({ ...p, [k]: v }));
+  const sf  = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+  const sp  = (k: string, v: string) => setPrestador(p => ({ ...p, [k]: v }));
+  const st  = (k: string, v: string) => setTomador(p => ({ ...p, [k]: v }));
+
+  // ── Auto-gera nome sugerido ─────────────────────────────────────────────────
+  const nomeSugerido = (() => {
+    const nf = form.numeroNf || '';
+    const tNome = (tomador.nomeRazaoSocial || tomador.nomeFantasia || '').replace(/\s+(Ltda\.?|S\.A\.?|ME\.?)$/i, '').trim().slice(0, 30);
+    if (nf && tNome) return `NF ${nf} – ${tNome}`;
+    if (nf) return `NF ${nf}`;
+    if (tNome) return tNome;
+    return '';
+  })();
 
   // ── PDF extraction ──────────────────────────────────────────────────────────
   const handleExtract = async () => {
@@ -61,39 +95,39 @@ export default function NovaNotaPage() {
       setExtracted(data);
 
       setForm({
-        status: 'lancada',
-        tipo: data.tipo || 'NFS-e',
-        nomeOrganizador: fmt(data.nomeOrganizador),
-        numeroNf: fmt(data.numeroNf),
-        numeroRps: fmt(data.numeroRps),
-        codigoVerificacao: fmt(data.codigoVerificacao),
-        of: fmt(data.of),
-        dataEmissao: fmt(data.dataEmissao),
-        dataFatoGerador: fmt(data.dataFatoGerador),
-        municipioEmissor: fmt(data.municipioEmissor),
-        codigoServico: fmt(data.codigoServico),
-        descricao: fmt(data.descricao),
-        quantidade: fmt(data.quantidade),
-        valorUnitario: fmt(data.valorUnitario),
-        valorBruto: fmt(data.valorBruto),
-        valorLiquido: fmt(data.valorLiquido),
-        baseCalculo: fmt(data.baseCalculo),
-        aliquota: fmt(data.aliquota),
-        valorIss: fmt(data.valorIss),
-        ir: fmt(data.ir),
-        pisPasep: fmt(data.pisPasep),
-        cofins: fmt(data.cofins),
-        inss: fmt(data.inss),
-        csll: fmt(data.csll),
-        outrasRetencoes: fmt(data.outrasRetencoes),
+        status:               'lancada',
+        tipo:                 data.tipo || 'NFS-e',
+        nomeOrganizador:      fmt(data.nomeOrganizador),
+        numeroNf:             fmt(data.numeroNf),
+        numeroRps:            fmt(data.numeroRps),
+        codigoVerificacao:    fmt(data.codigoVerificacao),
+        of:                   fmt(data.of),
+        dataEmissao:          fmt(data.dataEmissao),
+        dataFatoGerador:      fmt(data.dataFatoGerador),
+        municipioEmissor:     fmt(data.municipioEmissor),
+        codigoServico:        fmt(data.codigoServico),
+        descricao:            fmt(data.descricao),
+        quantidade:           fmt(data.quantidade),
+        valorUnitario:        fmt(data.valorUnitario),
+        valorBruto:           fmt(data.valorBruto),
+        valorLiquido:         fmt(data.valorLiquido),
+        baseCalculo:          fmt(data.baseCalculo),
+        aliquota:             fmt(data.aliquota),
+        valorIss:             fmt(data.valorIss),
+        ir:                   fmt(data.ir),
+        pisPasep:             fmt(data.pisPasep),
+        cofins:               fmt(data.cofins),
+        inss:                 fmt(data.inss),
+        csll:                 fmt(data.csll),
+        outrasRetencoes:      fmt(data.outrasRetencoes),
         valorAproximadoTributos: fmt(data.valorAproximadoTributos),
-        naturezaOperacao: fmt(data.naturezaOperacao),
+        naturezaOperacao:     fmt(data.naturezaOperacao),
         situacaoTributariaIssqn: fmt(data.situacaoTributariaIssqn),
-        localPrestacao: fmt(data.localPrestacao),
-        situacaoNfse: fmt(data.situacaoNfse),
-        regimeTributario: fmt(data.regimeTributario),
-        indicacaoRetencao: fmt(data.indicacaoRetencao),
-        observacoesFiscais: fmt(data.observacoesFiscais),
+        localPrestacao:       fmt(data.localPrestacao),
+        situacaoNfse:         fmt(data.situacaoNfse),
+        regimeTributario:     fmt(data.regimeTributario),
+        indicacaoRetencao:    fmt(data.indicacaoRetencao),
+        observacoesFiscais:   fmt(data.observacoesFiscais),
         observacoesAutenticidade: fmt(data.observacoesAutenticidade),
         observacoes: '',
         tags: '',
@@ -102,17 +136,13 @@ export default function NovaNotaPage() {
       });
 
       if (data.prestador) {
-        setPrestador(Object.fromEntries(
-          Object.entries(data.prestador).map(([k, v]) => [k, fmt(v)])
-        ));
+        setPrestador(Object.fromEntries(Object.entries(data.prestador).map(([k, v]) => [k, fmt(v)])));
       }
       if (data.tomador) {
-        setTomador(Object.fromEntries(
-          Object.entries(data.tomador).map(([k, v]) => [k, fmt(v)])
-        ));
+        setTomador(Object.fromEntries(Object.entries(data.tomador).map(([k, v]) => [k, fmt(v)])));
       }
 
-      setPdfStep('review');
+      setPdfStep('check');
     } catch {
       setExtractError('Erro ao processar o PDF. Tente novamente.');
       setPdfStep('upload');
@@ -121,18 +151,15 @@ export default function NovaNotaPage() {
 
   // ── Save ────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!form.nomeOrganizador?.trim()) {
-      setSaveError('Informe um nome para identificar esta nota.');
-      return;
-    }
-    setSaving(true);
-    setSaveError('');
+    setSaving(true); setSaveError('');
+    const nome = form.nomeOrganizador?.trim() || nomeSugerido || 'Nota sem nome';
     try {
       const payload = {
         ...form,
+        nomeOrganizador: nome,
         pdfData: pdfData || undefined,
         prestador: Object.values(prestador).some(Boolean) ? prestador : undefined,
-        tomador: Object.values(tomador).some(Boolean) ? tomador : undefined,
+        tomador:   Object.values(tomador).some(Boolean)   ? tomador   : undefined,
       };
       const res = await fetch('/api/notas', {
         method: 'POST',
@@ -149,44 +176,46 @@ export default function NovaNotaPage() {
     }
   };
 
-  // ── Render: Choice Screen ───────────────────────────────────────────────────
+  // ── Tela inicial — escolha do modo ─────────────────────────────────────────
   if (mode === null) {
     return (
       <Centered>
-        <div className="animate-enter w-full max-w-md">
-          <div className="text-center mb-10">
+        <div className="animate-enter w-full max-w-sm">
+          <div className="text-center mb-8">
             <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
               <FileText size={26} className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Nova Nota Fiscal</h1>
-            <p className="text-gray-400 mt-1.5 text-sm">Como deseja lançar esta nota?</p>
+            <p className="text-gray-400 mt-1 text-sm">Como deseja lançar esta nota?</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3">
             <button
               onClick={() => setMode('pdf')}
-              className="flex flex-col items-center gap-4 p-8 bg-white rounded-2xl border-2 border-gray-100 hover:border-red-300 hover:bg-red-50/40 transition-all group shadow-sm"
+              className="w-full flex items-center gap-4 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-blue-300 hover:bg-blue-50/40 transition-all group shadow-sm text-left"
             >
-              <div className="w-16 h-16 bg-red-50 group-hover:bg-red-100 rounded-2xl flex items-center justify-center transition-colors">
-                <Upload size={28} className="text-red-500" />
+              <div className="w-12 h-12 bg-red-50 group-hover:bg-red-100 rounded-xl flex items-center justify-center transition-colors shrink-0">
+                <Upload size={22} className="text-red-500" />
               </div>
-              <div className="text-center">
+              <div>
                 <p className="font-bold text-gray-800">Carregar PDF</p>
-                <p className="text-xs text-gray-400 mt-0.5">Extração automática</p>
+                <p className="text-sm text-gray-400 mt-0.5">Sistema preenche os dados automaticamente</p>
               </div>
+              <ChevronRight size={18} className="text-gray-300 ml-auto shrink-0" />
             </button>
 
             <button
               onClick={() => setMode('manual')}
-              className="flex flex-col items-center gap-4 p-8 bg-white rounded-2xl border-2 border-gray-100 hover:border-blue-300 hover:bg-blue-50/40 transition-all group shadow-sm"
+              className="w-full flex items-center gap-4 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-blue-300 hover:bg-blue-50/40 transition-all group shadow-sm text-left"
             >
-              <div className="w-16 h-16 bg-blue-50 group-hover:bg-blue-100 rounded-2xl flex items-center justify-center transition-colors">
-                <Pencil size={28} className="text-blue-500" />
+              <div className="w-12 h-12 bg-blue-50 group-hover:bg-blue-100 rounded-xl flex items-center justify-center transition-colors shrink-0">
+                <Pencil size={22} className="text-blue-500" />
               </div>
-              <div className="text-center">
-                <p className="font-bold text-gray-800">Preencher Manual</p>
-                <p className="text-xs text-gray-400 mt-0.5">Digitar os dados</p>
+              <div>
+                <p className="font-bold text-gray-800">Preencher Manualmente</p>
+                <p className="text-sm text-gray-400 mt-0.5">Digitar os dados da nota</p>
               </div>
+              <ChevronRight size={18} className="text-gray-300 ml-auto shrink-0" />
             </button>
           </div>
 
@@ -200,46 +229,39 @@ export default function NovaNotaPage() {
     );
   }
 
-  // ── Render: PDF — Step 1 (Upload) ───────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════════
+  // FLUXO PDF
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  // PDF — Etapa 1: Upload
   if (mode === 'pdf' && pdfStep === 'upload') {
     return (
-      <WizardShell
-        title="Carregar PDF da nota"
-        step={1} totalSteps={3}
+      <Wizard title="Carregar PDF da nota" icon={<Upload size={18} className="text-red-500" />}
+        step={1} total={5}
         onBack={() => { setMode(null); setPdfFile(null); setExtractError(''); }}
         onNext={pdfFile ? handleExtract : undefined}
-        nextLabel="Próximo"
+        nextLabel="Continuar"
         nextDisabled={!pdfFile}
       >
-        {extractError && (
-          <Alert type="error" message={extractError} onClose={() => setExtractError('')} className="mb-4" />
-        )}
+        {extractError && <Alert type="error" message={extractError} className="mb-4" />}
 
         <div
           className={`relative border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer select-none ${
-            isDragging
-              ? 'border-blue-500 bg-blue-50'
-              : pdfFile
-              ? 'border-green-400 bg-green-50'
-              : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+            isDragging ? 'border-blue-500 bg-blue-50'
+            : pdfFile  ? 'border-green-400 bg-green-50'
+            : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
           }`}
           onClick={() => fileRef.current?.click()}
           onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={e => {
-            e.preventDefault();
-            setIsDragging(false);
+            e.preventDefault(); setIsDragging(false);
             const f = e.dataTransfer.files[0];
             if (f?.name.toLowerCase().endsWith('.pdf')) setPdfFile(f);
           }}
         >
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf"
-            className="hidden"
-            onChange={e => { if (e.target.files?.[0]) setPdfFile(e.target.files[0]); }}
-          />
+          <input ref={fileRef} type="file" accept=".pdf" className="hidden"
+            onChange={e => { if (e.target.files?.[0]) setPdfFile(e.target.files[0]); }} />
 
           {pdfFile ? (
             <>
@@ -247,242 +269,254 @@ export default function NovaNotaPage() {
                 <CheckCircle size={28} className="text-green-600" />
               </div>
               <p className="font-semibold text-green-800">{pdfFile.name}</p>
-              <p className="text-sm text-gray-400 mt-1">Clique para trocar o arquivo</p>
+              <p className="text-sm text-green-600 mt-1">{(pdfFile.size / 1024).toFixed(0)} KB • Pronto para enviar</p>
+              <button className="text-xs text-gray-400 hover:text-gray-600 mt-3 underline" onClick={e => { e.stopPropagation(); setPdfFile(null); }}>
+                Trocar arquivo
+              </button>
             </>
           ) : (
             <>
-              <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                <Upload size={26} className="text-gray-400" />
+              <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <Upload size={26} className="text-red-400" />
               </div>
-              <p className="font-semibold text-gray-700">Arraste o PDF aqui</p>
-              <p className="text-sm text-gray-400 mt-1">ou clique para selecionar o arquivo</p>
+              <p className="font-semibold text-gray-700">Clique ou arraste o PDF aqui</p>
+              <p className="text-sm text-gray-400 mt-1">Arquivos .pdf até 10 MB</p>
             </>
           )}
         </div>
-      </WizardShell>
+      </Wizard>
     );
   }
 
-  // ── Render: PDF — Step 2 (Extracting) ──────────────────────────────────────
+  // PDF — Etapa 2: Extraindo
   if (mode === 'pdf' && pdfStep === 'extracting') {
     return (
-      <WizardShell title="Lendo o PDF..." step={2} totalSteps={3}>
-        <div className="flex flex-col items-center py-8">
-          <div className="relative mb-6">
-            <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center">
-              <FileText size={34} className="text-blue-500" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center shadow">
-              <Loader2 size={14} className="text-white animate-spin" />
+      <Centered>
+        <div className="animate-enter flex flex-col items-center gap-6 max-w-sm text-center">
+          <div className="relative w-20 h-20">
+            <div className="w-20 h-20 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Sparkles size={22} className="text-blue-600" />
             </div>
           </div>
-          <p className="font-semibold text-gray-800 text-base">Extraindo dados do PDF...</p>
-          <p className="text-sm text-gray-400 mt-2 text-center">
-            Identificando campos da nota fiscal.<br />Isso leva apenas alguns segundos.
-          </p>
-        </div>
-      </WizardShell>
-    );
-  }
-
-  // ── Render: PDF — Step 3 (Review + Name) ───────────────────────────────────
-  if (mode === 'pdf' && pdfStep === 'review') {
-    const missing  = extracted?.camposNaoEncontrados || [];
-    const lowConf  = extracted?.camposBaixaConfianca || [];
-    const issues   = extracted?.inconsistencias || [];
-
-    const brl = (v: string | number | undefined) => {
-      const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
-      return isNaN(n) ? '' : `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    };
-    const dataBR = (v: string) => {
-      if (!v) return '';
-      try { return new Date(v + 'T12:00:00').toLocaleDateString('pt-BR'); } catch { return v; }
-    };
-    const pct = (v: string) => v ? `${v}%` : '';
-
-    // ── Section helper ──────────────────────────────────────────────────────
-    const Section = ({ title, rows }: { title: string; rows: { label: string; value: string; full?: boolean }[] }) => {
-      const visible = rows.filter(r => r.value);
-      if (!visible.length) return null;
-      return (
-        <div className="mb-3">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5">{title}</p>
-          <div className="bg-gray-50 rounded-xl p-3 grid grid-cols-2 gap-x-4 gap-y-2">
-            {visible.map(({ label, value, full }) => (
-              <div key={label} className={`flex items-start gap-1.5 min-w-0 ${full ? 'col-span-2' : ''}`}>
-                <CheckCircle size={11} className="text-green-500 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[10px] text-gray-400 leading-none">{label}</p>
-                  <p className="text-xs font-semibold text-gray-700 break-words">{value}</p>
-                </div>
-              </div>
+          <div>
+            <p className="text-xl font-bold text-gray-900">Lendo o PDF…</p>
+            <p className="text-sm text-gray-400 mt-1.5">Identificando campos automaticamente.<br />Isso leva apenas alguns segundos.</p>
+          </div>
+          <div className="flex gap-1 mt-2">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="w-2 h-2 rounded-full bg-blue-300 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
             ))}
           </div>
         </div>
-      );
-    };
-
-    return (
-      <WizardShell
-        title="Revisar e salvar"
-        step={3} totalSteps={3}
-        onBack={() => { setPdfStep('upload'); setExtracted(null); }}
-        onNext={handleSave}
-        nextLabel={saving ? 'Salvando...' : 'Salvar Nota'}
-        nextDisabled={saving || !form.nomeOrganizador?.trim()}
-        isSave
-        saveError={saveError}
-      >
-        {/* ── Nome da nota ──────────────────────────────────────────────── */}
-        <div className="mb-4">
-          <label className="block text-sm font-bold text-gray-800 mb-1.5">
-            Nome da nota <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            className="input text-sm py-2.5 font-medium"
-            placeholder="Ex: NF 187 – Instalação tanques de salmoura"
-            value={form.nomeOrganizador || ''}
-            onChange={e => sf('nomeOrganizador', e.target.value)}
-            autoFocus
-          />
-        </div>
-
-        {/* ── Data de vencimento ────────────────────────────────────────── */}
-        <div className="mb-4">
-          <label className="label">Data de Vencimento</label>
-          <input
-            type="date"
-            className="input"
-            value={form.dataVencimento || ''}
-            onChange={e => sf('dataVencimento', e.target.value)}
-          />
-        </div>
-
-        {/* ── Sparkles header ──────────────────────────────────────────── */}
-        <div className="flex items-center gap-1.5 mb-2">
-          <Sparkles size={12} className="text-blue-500" />
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">
-            Dados extraídos automaticamente
-          </p>
-        </div>
-
-        {/* ── Identificação ─────────────────────────────────────────────── */}
-        <Section title="Identificação" rows={[
-          { label: 'NF Nº',            value: form.numeroNf },
-          { label: 'Tipo',             value: form.tipo },
-          { label: 'Data Emissão',     value: dataBR(form.dataEmissao) },
-          { label: 'Fato Gerador',     value: dataBR(form.dataFatoGerador) },
-          { label: 'Cód. Verificação', value: form.codigoVerificacao },
-          { label: 'Município',        value: form.municipioEmissor },
-          { label: 'Sit. NFS-e',       value: form.situacaoNfse },
-          { label: 'OF',               value: form.of },
-          { label: 'Cód. Serviço',     value: form.codigoServico },
-        ]} />
-
-        {/* ── Serviço ───────────────────────────────────────────────────── */}
-        <Section title="Serviço" rows={[
-          { label: 'Descrição',    value: form.descricao, full: true },
-          { label: 'Quantidade',   value: form.quantidade },
-          { label: 'Vlr. Unit.',   value: brl(form.valorUnitario) },
-        ]} />
-
-        {/* ── Partes ────────────────────────────────────────────────────── */}
-        <Section title="Prestador" rows={[
-          { label: 'Razão Social', value: prestador.nomeRazaoSocial || prestador.nomeFantasia || '' },
-          { label: 'CNPJ/CPF',    value: prestador.cpfCnpj || '' },
-          { label: 'Município',   value: prestador.municipio ? `${prestador.municipio}${prestador.uf ? '/' + prestador.uf : ''}` : '' },
-          { label: 'E-mail',      value: prestador.email || '', full: true },
-        ]} />
-        <Section title="Tomador" rows={[
-          { label: 'Razão Social', value: tomador.nomeRazaoSocial || tomador.nomeFantasia || '' },
-          { label: 'CNPJ/CPF',    value: tomador.cpfCnpj || '' },
-          { label: 'Município',   value: tomador.municipio ? `${tomador.municipio}${tomador.uf ? '/' + tomador.uf : ''}` : '' },
-          { label: 'Telefone',    value: tomador.telefone || '' },
-        ]} />
-
-        {/* ── Valores ───────────────────────────────────────────────────── */}
-        <Section title="Valores" rows={[
-          { label: 'Valor Bruto',   value: brl(form.valorBruto) },
-          { label: 'Valor Líquido', value: brl(form.valorLiquido) },
-          { label: 'Base Cálculo',  value: brl(form.baseCalculo) },
-          { label: 'Alíquota ISS',  value: pct(form.aliquota) },
-          { label: 'Valor ISS',     value: brl(form.valorIss) },
-          ...(extracted?.desconto ? [{ label: 'Desconto', value: brl(extracted.desconto) }] : []),
-          ...(extracted?.deducoes ? [{ label: 'Deduções', value: brl(extracted.deducoes) }] : []),
-        ]} />
-
-        {/* ── Retenções (mostra só se algum > 0) ───────────────────────── */}
-        {(() => {
-          const ret = [
-            { label: 'PIS/PASEP', value: form.pisPasep },
-            { label: 'COFINS',    value: form.cofins },
-            { label: 'INSS',      value: form.inss },
-            { label: 'IR',        value: form.ir },
-            { label: 'CSLL',      value: form.csll },
-            { label: 'Outras',    value: form.outrasRetencoes },
-          ].filter(r => r.value && parseFloat(r.value) > 0)
-           .map(r => ({ label: r.label, value: brl(r.value) }));
-          return <Section title="Retenções Federais" rows={ret} />;
-        })()}
-
-        {/* ── Fiscal ────────────────────────────────────────────────────── */}
-        <Section title="Fiscal" rows={[
-          { label: 'Nat. Operação',   value: form.naturezaOperacao },
-          { label: 'Sit. Tributária', value: form.situacaoTributariaIssqn },
-          { label: 'Local Prestação', value: form.localPrestacao },
-          { label: 'Regime',          value: form.regimeTributario },
-          ...(extracted?.simplesNacional ? [{ label: 'Simples Nacional', value: 'Sim' }] : []),
-          ...(extracted?.valorAproximadoTributosFederal != null ? [{
-            label: 'Trib. Federal',
-            value: brl(extracted.valorAproximadoTributosFederal),
-          }] : []),
-          ...(extracted?.valorAproximadoTributosMunicipal != null ? [{
-            label: 'Trib. Municipal',
-            value: brl(extracted.valorAproximadoTributosMunicipal),
-          }] : []),
-        ]} />
-
-        {/* ── Avisos ────────────────────────────────────────────────────── */}
-        {issues.length > 0 && (
-          <Alert type="error" className="mb-2"
-            message={`Inconsistência: ${issues.join(' | ')}`} />
-        )}
-        {lowConf.length > 0 && (
-          <Alert type="warning" className="mb-2"
-            message={`Baixa confiança: ${lowConf.join(', ')}`} />
-        )}
-        {missing.length > 0 && (
-          <Alert type="warning"
-            message={`Não encontrado: ${missing.join(', ')} — edite após salvar.`} />
-        )}
-      </WizardShell>
+      </Centered>
     );
   }
 
-  // ── Render: Manual — Step 1 (Essentials) ───────────────────────────────────
-  if (mode === 'manual' && manualStep === 'essentials') {
+  // PDF — Etapa 3: Conferir dados que precisam de atenção
+  if (mode === 'pdf' && pdfStep === 'check') {
+    const missing = extracted?.camposNaoEncontrados || [];
+    const issues  = extracted?.inconsistencias || [];
+
+    // Campos preenchidos automaticamente para mostrar no resumo
+    const autoFilled = [
+      form.numeroNf         && { label: 'Número NF',          value: form.numeroNf },
+      form.dataEmissao      && { label: 'Data de Emissão',     value: dataBR(form.dataEmissao) },
+      form.valorBruto       && { label: 'Valor Bruto',         value: brl(form.valorBruto) },
+      form.valorLiquido     && { label: 'Valor Líquido',       value: brl(form.valorLiquido) },
+      form.codigoVerificacao && { label: 'Cód. Verificação',   value: form.codigoVerificacao },
+      form.municipioEmissor && { label: 'Município',           value: form.municipioEmissor },
+      tomador.nomeRazaoSocial && { label: 'Tomador',           value: tomador.nomeRazaoSocial },
+      prestador.nomeRazaoSocial && { label: 'Prestador',       value: prestador.nomeRazaoSocial },
+    ].filter(Boolean) as { label: string; value: string }[];
+
     return (
-      <WizardShell
-        title="Dados principais"
-        step={1} totalSteps={3}
+      <Wizard title="Confirme os dados" icon={<ClipboardCheck size={18} className="text-blue-500" />}
+        step={3} total={5}
+        onBack={() => setPdfStep('upload')}
+        onNext={() => { if (!form.nomeOrganizador) sf('nomeOrganizador', nomeSugerido); setPdfStep('nome'); }}
+        nextLabel="Continuar"
+      >
+        {/* Preenchido automaticamente */}
+        {autoFilled.length > 0 && (
+          <div className="bg-green-50 rounded-xl p-4 mb-5">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Sparkles size={13} className="text-green-600" />
+              <p className="text-xs font-bold text-green-700 uppercase tracking-wide">Preenchido automaticamente</p>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              {autoFilled.map(f => (
+                <div key={f.label} className="flex items-center gap-1.5 min-w-0">
+                  <CheckCircle size={11} className="text-green-500 shrink-0" />
+                  <span className="text-xs text-gray-600 truncate"><span className="text-gray-400">{f.label}:</span> <span className="font-semibold">{f.value}</span></span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Campos que precisam de atenção */}
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Precisa da sua atenção</p>
+
+            <Field label="Data de Vencimento">
+              <input type="date" className="input" value={form.dataVencimento || ''}
+                onChange={e => sf('dataVencimento', e.target.value)} />
+            </Field>
+          </div>
+
+          <Field label="Status da Nota">
+            <select className="input" value={form.status || 'lancada'} onChange={e => sf('status', e.target.value)}>
+              {STATUS_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+          </Field>
+
+          {/* Avisos de campos não encontrados */}
+          {missing.length > 0 && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <AlertCircle size={14} className="text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-amber-700">Não encontrado no PDF</p>
+                <p className="text-xs text-amber-600 mt-0.5">{missing.join(', ')} — você pode preencher depois de salvar.</p>
+              </div>
+            </div>
+          )}
+
+          {issues.length > 0 && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3">
+              <AlertCircle size={14} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-red-600">{issues[0]}</p>
+            </div>
+          )}
+        </div>
+      </Wizard>
+    );
+  }
+
+  // PDF — Etapa 4: Nome da nota
+  if (mode === 'pdf' && pdfStep === 'nome') {
+    const sugestao = nomeSugerido;
+    return (
+      <Wizard title="Nome da nota" icon={<Tag size={18} className="text-purple-500" />}
+        step={4} total={5}
+        onBack={() => setPdfStep('check')}
+        onNext={() => setPdfStep('confirmar')}
+        nextLabel="Continuar"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Como quer chamar esta nota?
+            </label>
+            <input
+              type="text"
+              className="input text-base py-3 font-medium"
+              placeholder={sugestao || 'Ex: NF 187 – Instalação de tanques'}
+              value={form.nomeOrganizador || ''}
+              onChange={e => sf('nomeOrganizador', e.target.value)}
+              autoFocus
+            />
+            {sugestao && !form.nomeOrganizador && (
+              <button
+                className="mt-2 text-xs text-blue-600 hover:underline"
+                onClick={() => sf('nomeOrganizador', sugestao)}
+              >
+                Usar sugestão: &quot;{sugestao}&quot;
+              </button>
+            )}
+            <p className="text-xs text-gray-400 mt-2">Este nome aparece na lista de notas para facilitar a busca.</p>
+          </div>
+        </div>
+      </Wizard>
+    );
+  }
+
+  // PDF — Etapa 5: Confirmar e salvar
+  if (mode === 'pdf' && pdfStep === 'confirmar') {
+    const nome = form.nomeOrganizador?.trim() || nomeSugerido || 'Nota sem nome';
+    const ret = [
+      { label: 'PIS/PASEP', value: form.pisPasep },
+      { label: 'COFINS',    value: form.cofins },
+      { label: 'INSS',      value: form.inss },
+      { label: 'IR',        value: form.ir },
+      { label: 'CSLL',      value: form.csll },
+    ].filter(r => r.value && parseFloat(r.value) > 0);
+
+    return (
+      <Wizard title="Tudo pronto!" icon={<CheckCircle size={18} className="text-green-500" />}
+        step={5} total={5}
+        onBack={() => setPdfStep('nome')}
+        onNext={handleSave}
+        nextLabel={saving ? 'Salvando...' : 'Salvar Nota'}
+        nextDisabled={saving}
+        isSave
+        saveError={saveError}
+      >
+        <div className="space-y-3">
+          {/* Nome */}
+          <div className="bg-blue-50 rounded-xl px-4 py-3 flex items-center gap-3">
+            <Tag size={16} className="text-blue-500 shrink-0" />
+            <div>
+              <p className="text-xs text-blue-400 font-medium">Nome da nota</p>
+              <p className="font-bold text-blue-900 text-sm">{nome}</p>
+            </div>
+          </div>
+
+          {/* Resumo rápido */}
+          <SummaryBlock title="Identificação">
+            {form.numeroNf      && <SRow label="NF Nº"       value={form.numeroNf} />}
+            {form.tipo          && <SRow label="Tipo"        value={form.tipo} />}
+            {form.dataEmissao   && <SRow label="Emissão"     value={dataBR(form.dataEmissao)} />}
+            {form.dataVencimento && <SRow label="Vencimento" value={dataBR(form.dataVencimento)} />}
+            {form.municipioEmissor && <SRow label="Município" value={form.municipioEmissor} />}
+          </SummaryBlock>
+
+          <SummaryBlock title="Valores">
+            {form.valorBruto   && <SRow label="Bruto"        value={brl(form.valorBruto)} />}
+            {form.valorLiquido && <SRow label="Líquido"      value={brl(form.valorLiquido)} />}
+            {form.aliquota     && <SRow label="Alíquota ISS" value={`${form.aliquota}%`} />}
+          </SummaryBlock>
+
+          {(tomador.nomeRazaoSocial || prestador.nomeRazaoSocial) && (
+            <SummaryBlock title="Partes">
+              {prestador.nomeRazaoSocial && <SRow label="Prestador" value={prestador.nomeRazaoSocial} />}
+              {tomador.nomeRazaoSocial   && <SRow label="Tomador"   value={tomador.nomeRazaoSocial} />}
+            </SummaryBlock>
+          )}
+
+          {ret.length > 0 && (
+            <SummaryBlock title="Retenções">
+              {ret.map(r => <SRow key={r.label} label={r.label} value={brl(r.value)} />)}
+            </SummaryBlock>
+          )}
+        </div>
+      </Wizard>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // FLUXO MANUAL
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  // Manual — Etapa 1: Dados básicos
+  if (mode === 'manual' && manualStep === 'basicos') {
+    return (
+      <Wizard title="Dados da nota" icon={<FileText size={18} className="text-gray-500" />}
+        step={1} total={5}
         onBack={() => setMode(null)}
-        onNext={() => setManualStep('details')}
+        onNext={() => setManualStep('partes')}
         nextLabel="Próximo"
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Número da NF">
-              <input type="text" className="input" placeholder="187" value={form.numeroNf || ''} onChange={e => sf('numeroNf', e.target.value)} />
-            </Field>
             <Field label="Tipo">
               <select className="input" value={form.tipo || 'NFS-e'} onChange={e => sf('tipo', e.target.value)}>
-                <option>NFS-e</option>
-                <option>NF-e</option>
-                <option>NF</option>
-                <option>Outro</option>
+                <option>NFS-e</option><option>NF-e</option><option>NF</option><option>Outro</option>
               </select>
+            </Field>
+            <Field label="Número da NF">
+              <input type="text" className="input" placeholder="187" value={form.numeroNf || ''} onChange={e => sf('numeroNf', e.target.value)} />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -493,289 +527,316 @@ export default function NovaNotaPage() {
               <input type="date" className="input" value={form.dataVencimento || ''} onChange={e => sf('dataVencimento', e.target.value)} />
             </Field>
           </div>
-          <Field label="Status">
-            <select className="input" value={form.status || 'lancada'} onChange={e => sf('status', e.target.value)}>
-              <option value="lancada">Lançada</option>
-              <option value="rascunho">Rascunho</option>
-              <option value="recebida">Recebida</option>
-              <option value="antecipada">Antecipada</option>
-              <option value="incompleta">Incompleta</option>
-            </select>
-          </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="OF">
-              <input type="text" className="input" placeholder="Ex: 6866682" value={form.of || ''} onChange={e => sf('of', e.target.value)} />
+            <Field label="Município Emissor">
+              <input type="text" className="input" placeholder="Dourados" value={form.municipioEmissor || ''} onChange={e => sf('municipioEmissor', e.target.value)} />
             </Field>
-            <Field label="Município">
-              <input type="text" className="input" placeholder="Dourados/MS" value={form.municipioEmissor || ''} onChange={e => sf('municipioEmissor', e.target.value)} />
+            <Field label="OF / OS">
+              <input type="text" className="input" placeholder="6866682" value={form.of || ''} onChange={e => sf('of', e.target.value)} />
             </Field>
           </div>
+          <Field label="Status">
+            <select className="input" value={form.status || 'lancada'} onChange={e => sf('status', e.target.value)}>
+              {STATUS_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+          </Field>
         </div>
-      </WizardShell>
+      </Wizard>
     );
   }
 
-  // ── Render: Manual — Step 2 (Tomador + Valores) ─────────────────────────────
-  if (mode === 'manual' && manualStep === 'details') {
+  // Manual — Etapa 2: Prestador + Tomador
+  if (mode === 'manual' && manualStep === 'partes') {
     return (
-      <WizardShell
-        title="Tomador e valores"
-        step={2} totalSteps={3}
-        onBack={() => setManualStep('essentials')}
-        onNext={() => setManualStep('finalize')}
+      <Wizard title="Empresas" icon={<Building2 size={18} className="text-indigo-500" />}
+        step={2} total={5}
+        onBack={() => setManualStep('basicos')}
+        onNext={() => setManualStep('valores')}
         nextLabel="Próximo"
       >
         <div className="space-y-5">
-          {/* Tomador */}
+          {/* Prestador */}
           <div>
-            <SectionLabel>Tomador de Serviços</SectionLabel>
+            <SectionLabel icon={<Building2 size={12} />}>Prestador de Serviços</SectionLabel>
             <div className="space-y-3">
               <Field label="Nome / Razão Social">
-                <input type="text" className="input" value={tomador.nomeRazaoSocial || ''} onChange={e => st('nomeRazaoSocial', e.target.value)} />
+                <input type="text" className="input" placeholder="JM Inox Manutenção Industrial Ltda" value={prestador.nomeRazaoSocial || ''} onChange={e => sp('nomeRazaoSocial', e.target.value)} />
               </Field>
               <Field label="CNPJ / CPF">
-                <input type="text" className="input" value={tomador.cpfCnpj || ''} onChange={e => st('cpfCnpj', e.target.value)} />
+                <input type="text" className="input" placeholder="49.521.060/0001-49" value={prestador.cpfCnpj || ''} onChange={e => sp('cpfCnpj', e.target.value)} />
               </Field>
             </div>
           </div>
 
           <div className="h-px bg-gray-100" />
 
-          {/* Valores */}
+          {/* Tomador */}
           <div>
-            <SectionLabel>Valores</SectionLabel>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Valor Bruto (R$)">
-                <input type="number" step="0.01" className="input" placeholder="50000" value={form.valorBruto || ''} onChange={e => sf('valorBruto', e.target.value)} />
+            <SectionLabel icon={<Building2 size={12} />}>Tomador de Serviços</SectionLabel>
+            <div className="space-y-3">
+              <Field label="Nome / Razão Social">
+                <input type="text" className="input" placeholder="Seara Alimentos Ltda" value={tomador.nomeRazaoSocial || ''} onChange={e => st('nomeRazaoSocial', e.target.value)} />
               </Field>
-              <Field label="Valor Líquido (R$)">
-                <input type="number" step="0.01" className="input" placeholder="47500" value={form.valorLiquido || ''} onChange={e => sf('valorLiquido', e.target.value)} />
-              </Field>
-              <Field label="Alíquota ISS (%)">
-                <input type="number" step="0.01" className="input" placeholder="5,00" value={form.aliquota || ''} onChange={e => sf('aliquota', e.target.value)} />
-              </Field>
-              <Field label="Valor ISS (R$)">
-                <input type="number" step="0.01" className="input" value={form.valorIss || ''} onChange={e => sf('valorIss', e.target.value)} />
+              <Field label="CNPJ / CPF">
+                <input type="text" className="input" placeholder="02.914.460/0061-91" value={tomador.cpfCnpj || ''} onChange={e => st('cpfCnpj', e.target.value)} />
               </Field>
             </div>
           </div>
-
-          <div className="h-px bg-gray-100" />
-
-          {/* Descrição */}
-          <Field label="Descrição do Serviço">
-            <textarea
-              className="input min-h-[72px] resize-none"
-              placeholder="Ex: instalação dos tanques de salmoura"
-              value={form.descricao || ''}
-              onChange={e => sf('descricao', e.target.value)}
-            />
-          </Field>
         </div>
-      </WizardShell>
+      </Wizard>
     );
   }
 
-  // ── Render: Manual — Step 3 (Finalize) ─────────────────────────────────────
-  if (mode === 'manual' && manualStep === 'finalize') {
+  // Manual — Etapa 3: Valores e impostos
+  if (mode === 'manual' && manualStep === 'valores') {
     return (
-      <WizardShell
-        title="Finalizar"
-        step={3} totalSteps={3}
-        onBack={() => setManualStep('details')}
-        onNext={handleSave}
-        nextLabel={saving ? 'Salvando...' : 'Salvar Nota'}
-        nextDisabled={saving || !form.nomeOrganizador?.trim()}
-        isSave
-        saveError={saveError}
+      <Wizard title="Valores" icon={<DollarSign size={18} className="text-green-500" />}
+        step={3} total={5}
+        onBack={() => setManualStep('partes')}
+        onNext={() => { if (!form.nomeOrganizador) sf('nomeOrganizador', nomeSugerido); setManualStep('nome'); }}
+        nextLabel="Próximo"
+      >
+        <div className="space-y-4">
+          <Field label="Descrição do Serviço">
+            <textarea className="input min-h-[70px] resize-none" placeholder="Referente a instalação dos tanques de salmoura" value={form.descricao || ''} onChange={e => sf('descricao', e.target.value)} />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Valor Bruto (R$)">
+              <input type="number" step="0.01" className="input" placeholder="50000.00" value={form.valorBruto || ''} onChange={e => sf('valorBruto', e.target.value)} />
+            </Field>
+            <Field label="Valor Líquido (R$)">
+              <input type="number" step="0.01" className="input" placeholder="47500.00" value={form.valorLiquido || ''} onChange={e => sf('valorLiquido', e.target.value)} />
+            </Field>
+            <Field label="Alíquota ISS (%)">
+              <input type="number" step="0.01" className="input" placeholder="5" value={form.aliquota || ''} onChange={e => sf('aliquota', e.target.value)} />
+            </Field>
+            <Field label="Valor ISS (R$)">
+              <input type="number" step="0.01" className="input" placeholder="2500.00" value={form.valorIss || ''} onChange={e => sf('valorIss', e.target.value)} />
+            </Field>
+          </div>
+
+          <details className="group">
+            <summary className="text-xs font-semibold text-gray-400 cursor-pointer hover:text-gray-600 select-none">
+              + Retenções federais (opcional)
+            </summary>
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              {['IR', 'PIS/PASEP', 'COFINS', 'INSS', 'CSLL'].map((label, i) => {
+                const keys = ['ir', 'pisPasep', 'cofins', 'inss', 'csll'];
+                return (
+                  <Field key={label} label={label}>
+                    <input type="number" step="0.01" className="input" placeholder="0.00" value={form[keys[i]] || ''} onChange={e => sf(keys[i], e.target.value)} />
+                  </Field>
+                );
+              })}
+            </div>
+          </details>
+        </div>
+      </Wizard>
+    );
+  }
+
+  // Manual — Etapa 4: Nome
+  if (mode === 'manual' && manualStep === 'nome') {
+    const sugestao = nomeSugerido;
+    return (
+      <Wizard title="Nome da nota" icon={<Tag size={18} className="text-purple-500" />}
+        step={4} total={5}
+        onBack={() => setManualStep('valores')}
+        onNext={() => setManualStep('confirmar')}
+        nextLabel="Continuar"
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-bold text-gray-800 mb-2">
-              Nome da nota <span className="text-red-500">*</span>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Como quer chamar esta nota?
             </label>
             <input
               type="text"
-              className="input text-sm py-3 font-medium"
-              placeholder="Ex: NF 187 – Cliente XYZ"
+              className="input text-base py-3 font-medium"
+              placeholder={sugestao || 'Ex: NF 187 – Cliente XYZ'}
               value={form.nomeOrganizador || ''}
               onChange={e => sf('nomeOrganizador', e.target.value)}
               autoFocus
             />
-            <p className="text-xs text-gray-400 mt-1">Nome para identificar esta nota na lista.</p>
+            {sugestao && !form.nomeOrganizador && (
+              <button
+                className="mt-2 text-xs text-blue-600 hover:underline"
+                onClick={() => sf('nomeOrganizador', sugestao)}
+              >
+                Usar sugestão: &quot;{sugestao}&quot;
+              </button>
+            )}
+            <p className="text-xs text-gray-400 mt-2">Aparece na lista de notas para facilitar a busca.</p>
           </div>
 
           <Field label="Observações (opcional)">
-            <textarea
-              className="input min-h-[72px] resize-none"
-              placeholder="Anotações internas..."
-              value={form.observacoes || ''}
-              onChange={e => sf('observacoes', e.target.value)}
-            />
+            <textarea className="input min-h-[60px] resize-none" placeholder="Anotações internas..." value={form.observacoes || ''} onChange={e => sf('observacoes', e.target.value)} />
           </Field>
+        </div>
+      </Wizard>
+    );
+  }
 
-          {/* Resumo */}
-          {(form.numeroNf || form.valorBruto || tomador.nomeRazaoSocial) && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Resumo da nota</p>
-              {form.numeroNf && <Row label="NF Nº" value={form.numeroNf} />}
-              {form.dataEmissao && (
-                <Row
-                  label="Emissão"
-                  value={(() => { try { return new Date(form.dataEmissao + 'T12:00:00').toLocaleDateString('pt-BR'); } catch { return form.dataEmissao; } })()}
-                />
-              )}
-              {form.valorBruto && (
-                <Row label="Valor Bruto" value={`R$ ${parseFloat(form.valorBruto).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
-              )}
-              {tomador.nomeRazaoSocial && <Row label="Tomador" value={tomador.nomeRazaoSocial} />}
+  // Manual — Etapa 5: Confirmar e salvar
+  if (mode === 'manual' && manualStep === 'confirmar') {
+    const nome = form.nomeOrganizador?.trim() || nomeSugerido || 'Nota sem nome';
+    return (
+      <Wizard title="Tudo pronto!" icon={<CheckCircle size={18} className="text-green-500" />}
+        step={5} total={5}
+        onBack={() => setManualStep('nome')}
+        onNext={handleSave}
+        nextLabel={saving ? 'Salvando...' : 'Salvar Nota'}
+        nextDisabled={saving}
+        isSave
+        saveError={saveError}
+      >
+        <div className="space-y-3">
+          <div className="bg-blue-50 rounded-xl px-4 py-3 flex items-center gap-3">
+            <Tag size={16} className="text-blue-500 shrink-0" />
+            <div>
+              <p className="text-xs text-blue-400 font-medium">Nome da nota</p>
+              <p className="font-bold text-blue-900 text-sm">{nome}</p>
             </div>
+          </div>
+
+          <SummaryBlock title="Identificação">
+            {form.numeroNf       && <SRow label="NF Nº"      value={form.numeroNf} />}
+            {form.dataEmissao    && <SRow label="Emissão"    value={dataBR(form.dataEmissao)} />}
+            {form.dataVencimento && <SRow label="Vencimento" value={dataBR(form.dataVencimento)} />}
+            {form.municipioEmissor && <SRow label="Município" value={form.municipioEmissor} />}
+          </SummaryBlock>
+
+          {(prestador.nomeRazaoSocial || tomador.nomeRazaoSocial) && (
+            <SummaryBlock title="Partes">
+              {prestador.nomeRazaoSocial && <SRow label="Prestador" value={prestador.nomeRazaoSocial} />}
+              {tomador.nomeRazaoSocial   && <SRow label="Tomador"   value={tomador.nomeRazaoSocial} />}
+            </SummaryBlock>
+          )}
+
+          {(form.valorBruto || form.valorLiquido) && (
+            <SummaryBlock title="Valores">
+              {form.valorBruto   && <SRow label="Bruto"        value={brl(form.valorBruto)} />}
+              {form.valorLiquido && <SRow label="Líquido"      value={brl(form.valorLiquido)} />}
+              {form.aliquota     && <SRow label="Alíquota ISS" value={`${form.aliquota}%`} />}
+            </SummaryBlock>
           )}
         </div>
-      </WizardShell>
+      </Wizard>
     );
   }
 
   return null;
 }
 
-// ─── Wizard Shell ─────────────────────────────────────────────────────────────
-function WizardShell({
-  title, step, totalSteps,
+// ─── Wizard ────────────────────────────────────────────────────────────────────
+function Wizard({
+  title, icon, step, total,
   onBack, onNext,
   nextLabel = 'Próximo', nextDisabled = false,
-  isSave = false,
-  saveError,
+  isSave = false, saveError,
   children,
 }: {
-  title: string;
-  step: number;
-  totalSteps: number;
-  onBack?: () => void;
-  onNext?: () => void;
-  nextLabel?: string;
-  nextDisabled?: boolean;
-  isSave?: boolean;
-  saveError?: string;
+  title: string; icon?: React.ReactNode;
+  step: number; total: number;
+  onBack?: () => void; onNext?: () => void;
+  nextLabel?: string; nextDisabled?: boolean;
+  isSave?: boolean; saveError?: string;
   children: React.ReactNode;
 }) {
   return (
     <Centered>
       <div className="animate-enter w-full max-w-md">
-        {/* Progress indicator */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            {Array.from({ length: totalSteps }, (_, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200 ${
-                  i + 1 < step
-                    ? 'bg-blue-600 text-white'
-                    : i + 1 === step
-                    ? 'bg-blue-600 text-white ring-4 ring-blue-100'
-                    : 'bg-gray-100 text-gray-400'
-                }`}>
-                  {i + 1 < step ? <CheckCircle size={13} /> : i + 1}
-                </div>
-                {i < totalSteps - 1 && (
-                  <div className={`w-8 h-0.5 rounded-full transition-colors duration-300 ${i + 1 < step ? 'bg-blue-600' : 'bg-gray-200'}`} />
-                )}
-              </div>
-            ))}
-          </div>
-          <span className="text-xs text-gray-400 font-medium">Etapa {step} / {totalSteps}</span>
+        {/* Progress dots */}
+        <div className="flex items-center justify-center gap-2 mb-6">
+          {Array.from({ length: total }, (_, i) => (
+            <div key={i} className={`rounded-full transition-all duration-300 ${
+              i + 1 < step  ? 'w-6 h-2 bg-blue-600' :
+              i + 1 === step ? 'w-8 h-2 bg-blue-600' :
+              'w-2 h-2 bg-gray-200'
+            }`} />
+          ))}
+          <span className="text-xs text-gray-400 ml-2">{step}/{total}</span>
         </div>
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 className="text-base font-bold text-gray-900 mb-5">{title}</h2>
+          <div className="flex items-center gap-2 mb-5">
+            {icon && <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center shrink-0">{icon}</div>}
+            <h2 className="text-base font-bold text-gray-900">{title}</h2>
+          </div>
           {children}
         </div>
 
-        {/* Error */}
-        {saveError && (
-          <Alert type="error" message={saveError} className="mt-3" />
-        )}
+        {saveError && <Alert type="error" message={saveError} className="mt-3" />}
 
         {/* Navigation */}
-        {(onBack || onNext) && (
-          <div className="flex items-center justify-between mt-4">
-            {onBack ? (
-              <button onClick={onBack} className="btn-ghost text-gray-500 text-sm">
-                <ChevronLeft size={16} /> Voltar
-              </button>
-            ) : <span />}
-
-            {onNext && (
-              <button onClick={onNext} disabled={nextDisabled} className="btn-primary">
-                {nextDisabled && isSave
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : isSave
-                  ? <Save size={14} />
-                  : null}
-                {nextLabel}
-                {!isSave && !nextDisabled && <ChevronRight size={15} />}
-              </button>
-            )}
-          </div>
-        )}
+        <div className="flex items-center justify-between mt-4">
+          {onBack ? (
+            <button onClick={onBack} className="btn-ghost text-gray-500 text-sm flex items-center gap-1">
+              <ChevronLeft size={16} /> Voltar
+            </button>
+          ) : <span />}
+          {onNext && (
+            <button onClick={onNext} disabled={nextDisabled}
+              className={`btn-primary ${nextDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+              {nextDisabled && isSave ? <Loader2 size={14} className="animate-spin" /> : isSave ? <Save size={14} /> : null}
+              {nextLabel}
+              {!isSave && <ChevronRight size={15} />}
+            </button>
+          )}
+        </div>
       </div>
     </Centered>
   );
 }
 
-// ─── Layout helpers ───────────────────────────────────────────────────────────
+// ─── Helpers de layout ────────────────────────────────────────────────────────
 function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-full p-6 bg-gray-50">
-      {children}
-    </div>
-  );
+  return <div className="flex flex-col items-center justify-center min-h-full p-6 bg-gray-50">{children}</div>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><label className="label">{label}</label>{children}</div>;
+}
+
+function SectionLabel({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div>
-      <label className="label">{label}</label>
-      {children}
+    <div className="flex items-center gap-1.5 mb-2.5">
+      {icon && <span className="text-gray-400">{icon}</span>}
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">{children}</p>
     </div>
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SummaryBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  const hasContent = Array.isArray(children) ? children.filter(Boolean).length > 0 : !!children;
+  if (!hasContent) return null;
   return (
-    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5">{children}</p>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between items-center text-sm">
-      <span className="text-gray-400">{label}</span>
-      <span className="font-semibold text-gray-800">{value}</span>
+    <div className="bg-gray-50 rounded-xl p-3">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">{title}</p>
+      <div className="space-y-1.5">{children}</div>
     </div>
   );
 }
 
-function Alert({
-  type, message, onClose, className = '',
-}: {
-  type: 'error' | 'warning';
-  message: string;
-  onClose?: () => void;
-  className?: string;
-}) {
-  const styles = type === 'error'
+function SRow({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <div className="flex justify-between items-center gap-2 text-sm">
+      <span className="text-gray-400 shrink-0">{label}</span>
+      <span className="font-semibold text-gray-800 text-right">{value}</span>
+    </div>
+  );
+}
+
+function Alert({ type, message, className = '' }: { type: 'error' | 'warning'; message: string; className?: string }) {
+  const cls = type === 'error'
     ? 'bg-red-50 border-red-200 text-red-700'
-    : 'bg-yellow-50 border-yellow-200 text-yellow-700';
+    : 'bg-amber-50 border-amber-200 text-amber-700';
   return (
-    <div className={`flex items-start gap-2 border rounded-xl p-3 text-sm ${styles} ${className}`}>
-      <AlertCircle size={15} className="shrink-0 mt-0.5" />
-      <span className="flex-1">{message}</span>
-      {onClose && (
-        <button onClick={onClose} className="ml-auto shrink-0">
-          <X size={14} />
-        </button>
-      )}
+    <div className={`flex items-center gap-2 ${cls} border rounded-xl p-3 text-sm ${className}`}>
+      <AlertCircle size={15} className="shrink-0" />{message}
     </div>
   );
 }
