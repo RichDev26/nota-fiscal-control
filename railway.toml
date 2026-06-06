@@ -3,7 +3,7 @@ builder = "nixpacks"
 buildCommand = "cp prisma/schema.postgresql.prisma prisma/schema.prisma && npx prisma generate && (rm -rf .next/cache/webpack 2>/dev/null || true) && npm run build"
 
 [deploy]
-startCommand = "npx prisma db push && npm start"
+startCommand = "npx prisma migrate deploy && npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"
