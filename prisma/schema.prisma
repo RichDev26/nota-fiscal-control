@@ -80,30 +80,30 @@ model NotaFiscal {
   tomadorId                     String?
   notaSubstitutivaId            String?
 
-  prestador          PessoaFiscal?      @relation("Prestador", fields: [prestadorId], references: [id])
-  tomador            PessoaFiscal?      @relation("Tomador", fields: [tomadorId], references: [id])
-  notaSubstitutiva   NotaFiscal?        @relation("Substituicao", fields: [notaSubstitutivaId], references: [id])
-  notasSubstituidas  NotaFiscal[]       @relation("Substituicao")
-  impostos           Imposto[]
-  historico          HistoricoAlteracao[]
+  prestador         PessoaFiscal?        @relation("Prestador", fields: [prestadorId], references: [id])
+  tomador           PessoaFiscal?        @relation("Tomador", fields: [tomadorId], references: [id])
+  notaSubstitutiva  NotaFiscal?          @relation("Substituicao", fields: [notaSubstitutivaId], references: [id])
+  notasSubstituidas NotaFiscal[]         @relation("Substituicao")
+  impostos          Imposto[]
+  historico         HistoricoAlteracao[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Imposto {
-  id             String    @id @default(cuid())
+  id             String      @id @default(cuid())
   mesReferencia  String?
   dataVencimento DateTime?
   dataPagamento  DateTime?
   imposto        String?
   valor          Float?
-  status         String    @default("pendente")
+  status         String      @default("pendente")
   observacao     String?
   notaFiscalId   String?
   notaFiscal     NotaFiscal? @relation(fields: [notaFiscalId], references: [id])
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 }
 
 model HistoricoAlteracao {

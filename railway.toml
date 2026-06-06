@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "cp prisma/schema.postgresql.prisma prisma/schema.prisma && npx prisma generate && npm run build"
+buildCommand = "cp prisma/schema.postgresql.prisma prisma/schema.prisma && npx prisma generate && rm -rf .next && npm run build"
 
 [deploy]
 startCommand = "npx prisma db push && npm start"
