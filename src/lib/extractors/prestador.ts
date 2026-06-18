@@ -18,6 +18,15 @@
 
 import pdfParse from 'pdf-parse';
 import type { ValidationResult, ConfidenceLevel } from './types';
+import {
+  findValidEnderecoSegments,
+  isZoneEndMarker,
+  normalizeEnderecoSegment,
+  isEnderecoAnchor,
+  COMPANY_SUFFIX_RE,
+  INSCR_TEXTUAL_RE,
+  isPersonName,
+} from './ocr-normalizer';
 
 // ─── TIPOS ESPECÍFICOS DA FASE 3 ─────────────────────────────────────────────
 
@@ -75,8 +84,7 @@ const RE_ALL_CAPS  = /^[A-Z][A-Z\s]+$/;   // nome fantasia: maiúsculas e espaç
 const RE_HAS_LOWER = /[a-z]/;             // razão social: tem letra minúscula
 const RE_URL       = /^(https?:\/\/|www\.)/i;
 
-// Sufixos de natureza jurídica para identificar razão social
-const COMPANY_SUFFIX_RE = /\s+(Ltda\.?|S\.?A\.?|EIRELI|ME|EPP|SLU|Cia\.?|Cooperativa|Associa[cç][aã]o|Instituto)\.?\s*$/i;
+// COMPANY_SUFFIX_RE importado de ./ocr-normalizer (Fase 4.6: inclui MEI, EI)
 
 // Siglas de UF válidas
 const VALID_UFS = new Set([
@@ -84,16 +92,8 @@ const VALID_UFS = new Set([
   'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
 ]);
 
-// Âncoras de seção que marcam o FIM da zona PRESTADOR
-const ZONE_END_MARKERS = [
-  'discriminação dos serviços', 'discriminacao dos servicos',
-  'forma de pagamento',
-  'retenções federais', 'retencoes federais',
-  'outras informações', 'outras informacoes',
-  'número da notanúmero do rps', 'numero da notanumero do rps',
-  'municipio de dourados', 'município de dourados',
-  'página', 'pagina',
-];
+// Âncoras de seção: isZoneEndMarker importado de ./ocr-normalizer
+// ('pagina'/'página' removidos na Fase 4.6 — eram substring match genérico demais)
 
 // Âncoras de label dentro da zona PRESTADOR
 const LABELS_PRESTADOR = {
@@ -190,20 +190,17 @@ function validateCPF(cpf: string): boolean {
 // ─── DETECTORES DE ZONA ───────────────────────────────────────────────────────
 
 function detectPrestadorZone(segs: string[]): { start: number; end: number; strategy: string } {
-  const enderecos = segs
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => /^Endereço:/i.test(s));
+  // Fase 4.6: findValidEnderecoSegments ignora "Endereço:" dentro da discriminação dos serviços
+  const enderecos = findValidEnderecoSegments(segs);
 
-  // Regra primária: 2ª ocorrência de "Endereço:" = início da zona PRESTADOR
+  // Regra primária: 2ª ocorrência válida de "Endereço:" = início da zona PRESTADOR
   if (enderecos.length >= 2) {
     const start = enderecos[1].i;
-    const lower = segs.map(s => s.toLowerCase());
-    const endMarkerIdx = segs.findIndex(
-      (_, i) => i > start && ZONE_END_MARKERS.some(m => lower[i].includes(m))
-    );
+    // Fase 4.6: isZoneEndMarker substitui ZONE_END_MARKERS inline; usa match exato para "Página N/M"
+    const endMarkerIdx = segs.findIndex((s, i) => i > start && isZoneEndMarker(s));
     const end = endMarkerIdx !== -1
       ? endMarkerIdx - 1
-      : Math.min(segs.length - 1, start + 24);
+      : Math.min(segs.length - 1, start + 35);  // Fase 4.6: cap 24→35 para zonas longas
     return { start, end, strategy: 'segunda_ocorrencia_endereco' };
   }
 
@@ -213,7 +210,7 @@ function detectPrestadorZone(segs: string[]): { start: number; end: number; stra
   );
   if (prestadorHeaderIdx !== -1 && enderecos.length === 1) {
     const start = enderecos[0].i;
-    const end = Math.min(segs.length - 1, start + 24);
+    const end   = Math.min(segs.length - 1, start + 35);
     return { start, end, strategy: 'unico_endereco_fallback' };
   }
 
@@ -226,8 +223,12 @@ function extractCpfCnpj(zone: string[]): PrestadorField {
   const validations: ValidationResult[] = [];
   let score = 0;
 
-  // Busca por padrão
-  const cnpjMatch = zone.map((s, i) => ({ s, i })).find(({ s }) => RE_CNPJ.test(s));
+  // Fase 4.6: hoist labelIdx para desempatar múltiplos CNPJs por proximidade ao label
+  const labelIdx  = findLabel(zone, LABELS_PRESTADOR.cpfCnpj);
+  const allCnpjs  = zone.map((s, i) => ({ s, i })).filter(({ s }) => RE_CNPJ.test(s));
+  const cnpjMatch = allCnpjs.length > 1 && labelIdx !== -1
+    ? allCnpjs.reduce((a, b) => Math.abs(a.i - labelIdx) <= Math.abs(b.i - labelIdx) ? a : b)
+    : allCnpjs[0] ?? null;
   const cpfMatch  = !cnpjMatch ? zone.map((s, i) => ({ s, i })).find(({ s }) => RE_CPF.test(s)) : null;
   const match = cnpjMatch ?? cpfMatch;
   const tipo  = cnpjMatch ? 'CNPJ' : cpfMatch ? 'CPF' : null;
@@ -237,7 +238,6 @@ function extractCpfCnpj(zone: string[]): PrestadorField {
   score += 50;
 
   const valor = match.s;
-  const labelIdx = findLabel(zone, LABELS_PRESTADOR.cpfCnpj);
   validations.push({ rule: 'label_encontrado', passed: labelIdx !== -1 });
   if (labelIdx !== -1) score += 15;
 
@@ -372,8 +372,10 @@ function extractEndereco(zone: string[]): {
   bairro: PrestadorField;
   cep: PrestadorField;
 } {
-  // O segmento "Endereço:" é sempre zone[0] pois é o início da zona
-  const raw = zone[0] ?? '';
+  // Fase 4.6: normaliza variações OCR do segmento Endereço antes de parsear
+  const rawOrig = zone[0] ?? '';
+  const raw     = normalizeEnderecoSegment(rawOrig);
+  const foundAnchor = isEnderecoAnchor(rawOrig);
 
   function makeField(
     valor: string | null,
@@ -388,7 +390,7 @@ function extractEndereco(zone: string[]): {
       nivel: levelFor(clamp(score)),
       metodo: method,
       validacoes: [
-        { rule: 'linha_endereco_encontrada', passed: raw.startsWith('Endereço:') },
+        { rule: 'linha_endereco_encontrada', passed: foundAnchor },
         { rule, passed: !!valor },
         ...(extra ?? []),
       ],
@@ -407,7 +409,7 @@ function extractEndereco(zone: string[]): {
   const cep        = cepRaw?.length === 8 ? `${cepRaw.slice(0, 5)}-${cepRaw.slice(5)}` : cepRaw;
 
   const cepValidation: ValidationResult[] = cep ? [
-    { rule: 'cep_8_digitos', passed: cepRaw?.length === 8 ?? false },
+    { rule: 'cep_8_digitos', passed: cepRaw?.length === 8 },
     { rule: 'cep_formato_xxxxx_xxx', passed: /^\d{5}-\d{3}$/.test(cep ?? '') },
   ] : [];
 
@@ -476,15 +478,29 @@ function extractInscricaoMunicipal(zone: string[], cnpj: string | null): Prestad
   validations.push({ rule: 'label_encontrado', passed: labelIdx !== -1 });
   if (labelIdx !== -1) score += 15;
 
-  // Candidatos: numérico puro 6-12 dígitos, NÃO é o CNPJ
-  const cnpjClean = cnpj?.replace(/\D/g, '') ?? '';
+  // Fase 4.6: suporta inscrições textuais (ISENTO, NÃO CONTRIBUINTE, etc.)
+  const cnpjClean  = cnpj?.replace(/\D/g, '') ?? '';
+  const textualIdx = zone.findIndex((s, i) =>
+    INSCR_TEXTUAL_RE.test(s) && (labelIdx === -1 || Math.abs(i - labelIdx) <= 5)
+  );
   const candidates = zone
     .map((s, i) => ({ s, i }))
     .filter(({ s }) => RE_INSCR_MUN.test(s) && s.replace(/\D/g, '') !== cnpjClean);
 
-  validations.push({ rule: 'candidatos_encontrados', passed: candidates.length > 0, detail: `${candidates.length}` });
+  validations.push({ rule: 'candidatos_encontrados', passed: candidates.length > 0 || textualIdx !== -1, detail: `${candidates.length}` });
 
-  if (candidates.length === 0) return nullField('inscrição municipal não encontrada', labelIdx !== -1);
+  if (candidates.length === 0) {
+    if (textualIdx !== -1) {
+      return {
+        valor: zone[textualIdx],
+        confianca: clamp(60 + (labelIdx !== -1 ? 20 : 0)),
+        nivel: levelFor(60 + (labelIdx !== -1 ? 20 : 0)),
+        metodo: 'inscricao_textual',
+        validacoes: [...validations, { rule: 'valor_textual_valido', passed: true, detail: zone[textualIdx] }],
+      };
+    }
+    return nullField('inscrição municipal não encontrada', labelIdx !== -1);
+  }
   score += 35;
 
   // Mais próximo do label
@@ -528,8 +544,20 @@ function extractInscricaoEstadual(zone: string[], cnpj: string | null, inscMuni:
       Math.abs(i - labelIdx) <= 8
     );
 
+  // Fase 4.6: verifica valores textuais (ISENTO, NÃO CONTRIBUINTE) próximos ao label
   if (candidates.length === 0) {
-    // Campo vazio: label encontrado mas sem valor → retornar null com confiança média
+    const textualIdx = zone.findIndex((s, i) =>
+      INSCR_TEXTUAL_RE.test(s) && s !== (inscMuni ?? '') && Math.abs(i - labelIdx) <= 8
+    );
+    if (textualIdx !== -1) {
+      return {
+        valor: zone[textualIdx],
+        confianca: 75,
+        nivel: 'media',
+        metodo: 'inscricao_textual',
+        validacoes: [...validations, { rule: 'valor_textual_valido', passed: true, detail: zone[textualIdx] }],
+      };
+    }
     return {
       valor: null,
       confianca: 75,
@@ -635,10 +663,28 @@ function extractRazaoSocial(zone: string[]): PrestadorField {
     );
 
   validations.push({ rule: 'candidatos_mixed_case', passed: candidates.length > 0, detail: `${candidates.length}` });
-  if (candidates.length === 0) return nullField('razão social não encontrada');
+
+  // Fase 4.6: fallback pessoa física (MEI, autônomo, prestador sem sufixo jurídico)
+  if (candidates.length === 0) {
+    const personName = zone
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => isPersonName(s))
+      .sort((a, b) => labelIdx !== -1 ? Math.abs(a.i - labelIdx) - Math.abs(b.i - labelIdx) : a.i - b.i)[0];
+    if (personName) {
+      validations.push({ rule: 'pessoa_fisica_detectada', passed: true, detail: personName.s });
+      return {
+        valor: personName.s,
+        confianca: clamp(50 + (labelIdx !== -1 ? 15 : 0)),
+        nivel: levelFor(50 + (labelIdx !== -1 ? 15 : 0)),
+        metodo: 'pessoa_fisica_fallback',
+        validacoes: validations,
+      };
+    }
+    return nullField('razão social não encontrada');
+  }
   score += 35;
 
-  // Preferir o que tem sufixo de natureza jurídica
+  // Preferir o que tem sufixo de natureza jurídica (Fase 4.6: inclui MEI, EI via ocr-normalizer)
   const withSuffix = candidates.filter(c => COMPANY_SUFFIX_RE.test(c.s));
   const chosen     = withSuffix.length > 0 ? withSuffix[0] : candidates[0];
 

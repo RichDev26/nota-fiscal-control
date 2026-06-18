@@ -25,6 +25,14 @@
 
 import pdfParse from 'pdf-parse';
 import type { ValidationResult, ConfidenceLevel } from './types';
+import {
+  findValidEnderecoSegments,
+  normalizeEnderecoSegment,
+  isEnderecoAnchor,
+  COMPANY_SUFFIX_RE,
+  INSCR_TEXTUAL_RE,
+  isPersonName,
+} from './ocr-normalizer';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
@@ -93,7 +101,7 @@ const VALID_UFS = new Set([
   'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
 ]);
 
-const COMPANY_SUFFIX_RE = /\s+(Ltda\.?|S\.?A\.?|EIRELI|ME|EPP|SLU|Cia\.?|Cooperativa|Associa[cç][aã]o|Instituto)\.?\s*$/i;
+// COMPANY_SUFFIX_RE importado de ./ocr-normalizer (Fase 4.6: inclui MEI, EI)
 
 const LABELS_TOMADOR = {
   razaoSocial:    ['nome/razão social:', 'nome/razao social:'],
@@ -180,11 +188,10 @@ function validateCPF(cpf: string): boolean {
 function detectTomadorZone(segs: string[]): {
   start: number; end: number; dataStart: number; strategy: string;
 } {
-  const enderecos = segs
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => /^Endereço:/i.test(s));
+  // Fase 4.6: findValidEnderecoSegments ignora "Endereço:" dentro da discriminação
+  const enderecos = findValidEnderecoSegments(segs);
 
-  // Regra primária: zona TOMADOR = tudo ANTES da 2ª ocorrência de "Endereço:"
+  // Regra primária: zona TOMADOR = tudo ANTES da 2ª ocorrência válida de "Endereço:"
   if (enderecos.length >= 2) {
     const start = 0;
     const end   = enderecos[1].i - 1;
@@ -195,7 +202,7 @@ function detectTomadorZone(segs: string[]): {
   // Fallback: apenas 1 endereço — provavelmente TOMADOR
   if (enderecos.length === 1) {
     const start = 0;
-    const end   = Math.min(segs.length - 1, enderecos[0].i + 24);
+    const end   = Math.min(segs.length - 1, enderecos[0].i + 35);
     const dataStart = findDataStart(segs.slice(start, end + 1));
     return { start, end, dataStart, strategy: 'unico_endereco_fallback' };
   }
@@ -216,8 +223,11 @@ function findDataStart(zone: string[]): number {
     if (RE_EMAIL.test(s)) return i;
     if (RE_PHONE.test(s)) return i;
     if (COMPANY_SUFFIX_RE.test(s)) return i;
+    // Fase 4.6: MEI/autônomo pode não ter sufixo jurídico — detectar por nome próprio
+    if (isPersonName(s)) return i;
   }
-  return 0;
+  // Fallback conservador: retorna 1 para pular ao menos o cabeçalho do rodapé na posição 0
+  return Math.min(1, zone.length - 1);
 }
 
 // ─── EXTRATORES DE CAMPO ──────────────────────────────────────────────────────
@@ -226,7 +236,12 @@ function extractCpfCnpj(zone: string[]): TomadorField {
   const validations: ValidationResult[] = [];
   let score = 0;
 
-  const cnpjMatch = zone.map((s, i) => ({ s, i })).find(({ s }) => RE_CNPJ.test(s));
+  // Fase 4.6: hoist labelIdx para desempatar múltiplos CNPJs por proximidade ao label
+  const labelIdx  = findLabel(zone, LABELS_TOMADOR.cpfCnpj);
+  const allCnpjs  = zone.map((s, i) => ({ s, i })).filter(({ s }) => RE_CNPJ.test(s));
+  const cnpjMatch = allCnpjs.length > 1 && labelIdx !== -1
+    ? allCnpjs.reduce((a, b) => Math.abs(a.i - labelIdx) <= Math.abs(b.i - labelIdx) ? a : b)
+    : allCnpjs[0] ?? null;
   const cpfMatch  = !cnpjMatch ? zone.map((s, i) => ({ s, i })).find(({ s }) => RE_CPF.test(s)) : null;
   const match = cnpjMatch ?? cpfMatch;
   const tipo  = cnpjMatch ? 'CNPJ' : cpfMatch ? 'CPF' : null;
@@ -235,8 +250,7 @@ function extractCpfCnpj(zone: string[]): TomadorField {
   if (!match) return nullField('CNPJ/CPF não encontrado na zona TOMADOR');
   score += 50;
 
-  const valor    = match.s;
-  const labelIdx = findLabel(zone, LABELS_TOMADOR.cpfCnpj);
+  const valor = match.s;
   validations.push({ rule: 'label_encontrado', passed: labelIdx !== -1 });
   if (labelIdx !== -1) score += 15;
 
@@ -357,8 +371,10 @@ function extractPhones(zone: string[]): { telefone: TomadorField; celular: Tomad
 function extractEndereco(zone: string[]): {
   endereco: TomadorField; numero: TomadorField; bairro: TomadorField; cep: TomadorField;
 } {
-  // O segmento Endereço: é o primeiro dentro da zona que começa com "Endereço:"
-  const rawSeg = zone.find(s => /^Endereço:/i.test(s)) ?? '';
+  // Fase 4.6: usa isEnderecoAnchor para detectar com tolerância OCR; normaliza antes de parsear
+  const rawOrig = zone.find(s => isEnderecoAnchor(s)) ?? '';
+  const rawSeg  = normalizeEnderecoSegment(rawOrig);
+  const foundAnchor = isEnderecoAnchor(rawOrig);
 
   function makeField(
     valor: string | null, rule: string, score: number, method: string,
@@ -370,7 +386,7 @@ function extractEndereco(zone: string[]): {
       nivel: levelFor(clamp(score)),
       metodo: method,
       validacoes: [
-        { rule: 'linha_endereco_encontrada', passed: /^Endereço:/i.test(rawSeg) },
+        { rule: 'linha_endereco_encontrada', passed: foundAnchor },
         { rule, passed: !!valor },
         ...(extra ?? []),
       ],
@@ -389,7 +405,7 @@ function extractEndereco(zone: string[]): {
   const cep        = cepRaw?.length === 8 ? `${cepRaw.slice(0, 5)}-${cepRaw.slice(5)}` : cepRaw;
 
   const cepValidation: ValidationResult[] = cep ? [
-    { rule: 'cep_8_digitos',          passed: cepRaw?.length === 8 ?? false },
+    { rule: 'cep_8_digitos',          passed: cepRaw?.length === 8 },
     { rule: 'cep_formato_xxxxx_xxx',  passed: /^\d{5}-\d{3}$/.test(cep ?? '') },
   ] : [];
 
@@ -501,7 +517,11 @@ function extractInscricaoMunicipal(
   validations.push({ rule: 'label_encontrado', passed: labelIdx !== -1 });
   if (labelIdx !== -1) score += 15;
 
-  const cnpjClean = cnpj?.replace(/\D/g, '') ?? '';
+  // Fase 4.6: suporta inscrições textuais (ISENTO, NÃO CONTRIBUINTE, etc.)
+  const cnpjClean  = cnpj?.replace(/\D/g, '') ?? '';
+  const textualIdx = zone.findIndex((s, i) =>
+    i >= dataStart && INSCR_TEXTUAL_RE.test(s) && (labelIdx === -1 || Math.abs(i - labelIdx) <= 5)
+  );
   const candidates = zone
     .map((s, i) => ({ s, i }))
     .filter(({ s, i }) =>
@@ -510,8 +530,20 @@ function extractInscricaoMunicipal(
       s.replace(/\D/g, '') !== cnpjClean
     );
 
-  validations.push({ rule: 'candidatos_encontrados', passed: candidates.length > 0, detail: `${candidates.length}` });
-  if (candidates.length === 0) return nullField('inscrição municipal não encontrada', labelIdx !== -1);
+  validations.push({ rule: 'candidatos_encontrados', passed: candidates.length > 0 || textualIdx !== -1, detail: `${candidates.length}` });
+
+  if (candidates.length === 0) {
+    if (textualIdx !== -1) {
+      return {
+        valor: zone[textualIdx],
+        confianca: clamp(60 + (labelIdx !== -1 ? 20 : 0)),
+        nivel: levelFor(60 + (labelIdx !== -1 ? 20 : 0)),
+        metodo: 'inscricao_textual',
+        validacoes: [...validations, { rule: 'valor_textual_valido', passed: true, detail: zone[textualIdx] }],
+      };
+    }
+    return nullField('inscrição municipal não encontrada', labelIdx !== -1);
+  }
   score += 35;
 
   const chosen = labelIdx !== -1
@@ -540,7 +572,7 @@ function extractInscricaoEstadual(
   validations.push({ rule: 'label_encontrado', passed: labelIdx !== -1 });
   if (labelIdx === -1) return nullField('label inscrição estadual não encontrado');
 
-  const cnpjClean    = cnpj?.replace(/\D/g, '') ?? '';
+  const cnpjClean     = cnpj?.replace(/\D/g, '') ?? '';
   const inscMuniClean = inscMuni ?? '';
   const candidates = zone
     .map((s, i) => ({ s, i }))
@@ -551,7 +583,20 @@ function extractInscricaoEstadual(
       Math.abs(i - labelIdx) <= 8
     );
 
+  // Fase 4.6: verifica valores textuais (ISENTO, NÃO CONTRIBUINTE) próximos ao label
   if (candidates.length === 0) {
+    const textualIdx = zone.findIndex((s, i) =>
+      INSCR_TEXTUAL_RE.test(s) && s !== inscMuniClean && Math.abs(i - labelIdx) <= 8
+    );
+    if (textualIdx !== -1) {
+      return {
+        valor: zone[textualIdx],
+        confianca: 75,
+        nivel: 'media',
+        metodo: 'inscricao_textual',
+        validacoes: [...validations, { rule: 'valor_textual_valido', passed: true, detail: zone[textualIdx] }],
+      };
+    }
     return {
       valor: null,
       confianca: 75,
@@ -655,9 +700,28 @@ function extractRazaoSocial(zone: string[], dataStart: number): TomadorField {
     );
 
   validations.push({ rule: 'candidatos_mixed_case', passed: candidates.length > 0, detail: `${candidates.length}` });
-  if (candidates.length === 0) return nullField('razão social não encontrada');
+
+  // Fase 4.6: fallback pessoa física (MEI, autônomo, prestador sem sufixo jurídico)
+  if (candidates.length === 0) {
+    const personName = zone
+      .map((s, i) => ({ s, i }))
+      .filter(({ s, i }) => i >= dataStart && isPersonName(s))
+      .sort((a, b) => labelIdx !== -1 ? Math.abs(a.i - labelIdx) - Math.abs(b.i - labelIdx) : a.i - b.i)[0];
+    if (personName) {
+      validations.push({ rule: 'pessoa_fisica_detectada', passed: true, detail: personName.s });
+      return {
+        valor: personName.s,
+        confianca: clamp(50 + (labelIdx !== -1 ? 15 : 0)),
+        nivel: levelFor(50 + (labelIdx !== -1 ? 15 : 0)),
+        metodo: 'pessoa_fisica_fallback',
+        validacoes: validations,
+      };
+    }
+    return nullField('razão social não encontrada');
+  }
   score += 35;
 
+  // Preferir o que tem sufixo de natureza jurídica (Fase 4.6: inclui MEI, EI via ocr-normalizer)
   const withSuffix = candidates.filter(c => COMPANY_SUFFIX_RE.test(c.s));
   const chosen     = withSuffix.length > 0 ? withSuffix[0] : candidates[0];
   const hasSuffix  = COMPANY_SUFFIX_RE.test(chosen.s);
