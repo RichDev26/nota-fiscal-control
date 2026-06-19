@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
-import { extractFromPdfBuffer } from '@/lib/pdf-extractor';
+import { extractFromPdfBuffer } from '@/lib/extractors/integrador';
 
 export async function POST(req: NextRequest) {
   try {
