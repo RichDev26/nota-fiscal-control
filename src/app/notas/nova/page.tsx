@@ -89,7 +89,7 @@ export default function NovaNotaPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [extractError, setExtractError] = useState('');
   const [extracted, setExtracted] = useState<PdfExtractResult | null>(null);
-  const [pdfData, setPdfData]   = useState('');
+  const [pdfTempId, setPdfTempId] = useState('');
   const [savedId, setSavedId]   = useState('');
 
   const [form, setForm] = useState<Record<string, string>>({ status: 'lancada', tipo: 'NFS-e' });
@@ -129,11 +129,11 @@ export default function NovaNotaPage() {
       const fd = new FormData();
       fd.append('file', pdfFile);
       const res  = await fetch('/api/pdf-extract', { method: 'POST', body: fd });
-      const data: PdfExtractResult & { pdfData?: string; error?: string } = await res.json();
+      const data: PdfExtractResult & { pdfTempId?: string; error?: string; bloqueado?: boolean } = await res.json();
 
       if (data.error) { setExtractError(data.error); setPdfStep('upload'); return; }
 
-      setPdfData(data.pdfData || '');
+      setPdfTempId(data.pdfTempId || '');
       setExtracted(data);
       setForm({
         status: 'lancada', tipo: data.tipo || 'NFS-e',
@@ -174,7 +174,7 @@ export default function NovaNotaPage() {
       const payload = {
         ...form,
         nomeOrganizador,
-        pdfData: pdfData || undefined,
+        pdfTempId: pdfTempId || undefined,
         prestador: Object.values(prestador).some(Boolean) ? prestador : undefined,
         tomador:   Object.values(tomador).some(Boolean)   ? tomador   : undefined,
       };
@@ -468,7 +468,8 @@ export default function NovaNotaPage() {
           </BigBtn>
           <BigBtn variant="secondary" onClick={() => {
             setMode(null); setPdfStep('upload'); setPdfFile(null);
-            setExtracted(null); setNome(''); setForm({ status: 'lancada', tipo: 'NFS-e' });
+            setExtracted(null); setNome(''); setPdfTempId('');
+            setForm({ status: 'lancada', tipo: 'NFS-e' });
             setPrestador({}); setTomador({});
           }}>
             + Nova Nota
