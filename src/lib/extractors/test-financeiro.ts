@@ -38,7 +38,7 @@ async function main() {
   for (let i = z.retencao.inicio; i <= z.retencao.fim; i++) relevant.add(i);
   for (let i = z.iss.inicio; i <= z.iss.fim; i++) relevant.add(i);
   for (let i = z.outrasInfo.inicio; i < Math.min(result.segmentos.length, z.outrasInfo.inicio + 15); i++) relevant.add(i);
-  [...relevant].sort((a, b) => a - b).forEach(i => {
+  Array.from(relevant).sort((a, b) => a - b).forEach(i => {
     if (result.segmentos[i]) console.log(`  [${String(i).padStart(2, '0')}] "${result.segmentos[i]}"`);
   });
 

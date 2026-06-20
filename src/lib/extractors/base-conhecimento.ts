@@ -268,7 +268,7 @@ export function detectarContradicao(
   const validadas = corricoesExistentes.filter(
     c => c.campo === campo && c.status === 'VALIDADA' && c.valor_corrigido !== null,
   );
-  const valoresValidados = [...new Set(validadas.map(c => c.valor_corrigido))];
+  const valoresValidados = Array.from(new Set(validadas.map(c => c.valor_corrigido)));
 
   if (valoresValidados.length >= 2) {
     return {

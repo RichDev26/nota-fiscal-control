@@ -243,16 +243,9 @@ export interface ResultadoFase10 {
                         'valor_corrigido'|'tipo_erro'|'subtipo_erro'|'aceita_para_aprendizado'>[];
   aprendizado:     Pick<ResultadoAprendizado, 'heuristicas_afetadas'|'ancoras_afetadas'|
                         'fronteiras_afetadas'|'confianca_ajustada'>;
-  reprocessamento: Pick<ResultadoReprocessamento, 'necessario'|'campos_recalculados'|'score_novo'>;
-}
-
-// Extendemos para incluir 'necessario' e 'score_novo' (não estão no ResultadoReprocessamento base)
-declare module './correcao-tipos' {
-  interface ResultadoFase10 {
-    reprocessamento: {
-      necessario:           boolean;
-      campos_recalculados:  string[];
-      score_novo:           number;
-    };
-  }
+  reprocessamento: {
+    necessario:          boolean;
+    campos_recalculados: string[];
+    score_novo:          number;
+  };
 }

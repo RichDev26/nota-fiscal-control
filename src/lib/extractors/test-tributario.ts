@@ -121,7 +121,7 @@ async function main() {
     const icon = ICON_RESULTADO[r.resultado] ?? '?';
     const sev  = SEV_COLOR[r.severidade] ?? '';
     console.log(`  ${icon} ${r.codigo}  ${sev}  ${r.descricao}`);
-    if (r.resultado !== 'APROVADO' || r.resultado === 'AVISO') {
+    if (r.resultado !== 'APROVADO') {
       console.log(`       ${r.detalhe}`);
     }
   };
