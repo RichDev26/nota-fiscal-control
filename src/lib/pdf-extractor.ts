@@ -73,9 +73,11 @@ function extractFloat(text: string, patterns: RegExp[]): number | undefined {
 
 const toISO = (d?: string): string | undefined => {
   if (!d) return undefined;
+  // 7.5 — Suporta DD/MM/YYYY, DD-MM-YYYY, DD/MM/YYYY HH:MM e DD/MM/YYYY HH:MM:SS
   const m = d.match(/(\d{2})[\/-](\d{2})[\/-](\d{4})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : undefined;
 };
+
 
 const validPhone = (v?: string) =>
   v && !/www\./i.test(v) && /\d{4,}/.test(v) && !/\/{1}/.test(v) ? v : undefined;
@@ -340,8 +342,9 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
 
   // ── Datas (por label, depois multiline, depois posicional) ───────────────
   // Em NFS-e com layout de tabela, o label fica numa linha e a data na próxima.
-  const allDatesGlobal = Array.from(text.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)).map(m => ({
-    date: m[1], idx: m.index!,
+  // 7.5 — Aceita DD/MM/YYYY e DD-MM-YYYY (hifenizado — comum em exports)
+  const allDatesGlobal = Array.from(text.matchAll(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})/g)).map(m => ({
+    date: m[1].replace(/-/g, '/'), idx: m.index!,
   }));
 
   // Encontra a primeira data que aparece APÓS um label de emissão
@@ -443,13 +446,52 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   })();
 
   // ══ SEÇÕES PRINCIPAIS ════════════════════════════════════════════════════════
+  // 7.1 — Busca com múltiplos padrões por seção (robustez de layout municipal)
 
-  const tStart = text.search(/TOMADOR\s+DE\s+SERVI[ÇC]OS/i);
-  const dStart = text.search(/DISCRIMINA[ÇC][AÃ]O\s+DOS\s+SERVI[ÇC]OS/i);
-  const retStart = text.search(/RETEN[ÇC][ÕO]ES\s+FEDERAIS/i);
-  const outStart = text.search(/OUTRAS\s+INFORMA[ÇC][ÕO]ES/i);
-  const formStart = text.search(/Forma\s+de\s+Pagamento/i);
-  const pStart  = text.search(/PRESTADOR\s+DE\s+SERVI[ÇC]OS/i);
+  function firstMatch(patterns: RegExp[]): number {
+    for (const re of patterns) {
+      const idx = text.search(re);
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }
+
+  const tStart = firstMatch([
+    /TOMADOR\s+DE\s+SERVI[ÇC]OS/i,
+    /TOMADOR\s+DO\s+SERVI[ÇC]O/i,
+    /DADOS\s+DO\s+TOMADOR/i,
+    /CONTRATANTE/i,
+  ]);
+  const dStart = firstMatch([
+    /DISCRIMINA[ÇC][AÃ]O\s+DOS\s+SERVI[ÇC]OS/i,
+    /DESCRI[ÇC][AÃ]O\s+DOS\s+SERVI[ÇC]OS/i,
+    /DESCRI[ÇC][AÃ]O\s+DO\s+SERVI[ÇC]O/i,
+    /DISCRIMINA[ÇC][AÃ]O\s+DO\s+SERVI[ÇC]O/i,
+    /SERVI[ÇC]OS\s+PRESTADOS/i,
+  ]);
+  const retStart = firstMatch([
+    /RETEN[ÇC][ÕO]ES\s+FEDERAIS/i,
+    /RETEN[ÇC][ÃA]O\s+NA\s+FONTE/i,
+    /RETEN[ÇC][ÕO]ES\s+TRIBUT[AÁ]RIAS/i,
+    /DEDU[ÇC][ÕO]ES\s+LEGAIS/i,
+    /IMPOSTOS\s+RETIDOS/i,
+  ]);
+  const outStart = firstMatch([
+    /OUTRAS\s+INFORMA[ÇC][ÕO]ES/i,
+    /INFORMA[ÇC][ÕO]ES\s+ADICIONAIS/i,
+    /OBSERVA[ÇC][ÕO]ES\s+FISCAIS/i,
+    /DADOS\s+ADICIONAIS/i,
+  ]);
+  const formStart = firstMatch([
+    /Forma\s+de\s+Pagamento/i,
+    /CONDI[ÇC][ÃA]O\s+DE\s+PAGAMENTO/i,
+  ]);
+  const pStart = firstMatch([
+    /PRESTADOR\s+DE\s+SERVI[ÇC]OS/i,
+    /PRESTADOR\s+DO\s+SERVI[ÇC]O/i,
+    /DADOS\s+DO\s+PRESTADOR/i,
+    /CONTRATADO/i,
+  ]);
 
   // ── DIVISÃO PRESTADOR / TOMADOR ──────────────────────────────────────────────
   // Estratégia 1 (prioridade): Usar os headers de seção quando disponíveis.
@@ -531,8 +573,9 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   }
 
   // ── DISCRIMINAÇÃO DOS SERVIÇOS ────────────────────────────────────────────────
+  // 7.6 — Fallback: quando não há bloco delimitado, busca descrição por label inline
   const discBlock = dStart >= 0
-    ? text.slice(dStart, formStart > dStart ? formStart : retStart > dStart ? retStart : dStart + 1200)
+    ? text.slice(dStart, formStart > dStart ? formStart : retStart > dStart ? retStart : dStart + 1500)
     : '';
 
   // Descrição: primeira linha não-header, não-número, com conteúdo real
@@ -540,13 +583,22 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
     const lines = discBlock.split('\n').map(l => l.trim()).filter(Boolean);
     // Pular header e linhas com valores monetários
     for (const line of lines) {
-      if (/^(DISCRIMINA|Valor\s+unit|Qtd|Base\s+de|ISS|R\$\s*[\d])/i.test(line)) continue;
+      if (/^(DISCRIMINA|DESCRI[ÇC][AÃ]O|Valor\s+unit|Qtd|Base\s+de|ISS|R\$\s*[\d])/i.test(line)) continue;
       if (/^[\d.,\s]+$/.test(line)) continue;   // só números
-      if (/^[A-Z\s]+$/.test(line) && line.length < 5) continue; // header curto
+      if (/^[A-Z\s]{1,6}$/.test(line)) continue; // header curto em maiúsculas
       if (line.length < 8) continue;
       result.descricao = line;
       break;
     }
+  }
+
+  // 7.6 — Fallback: busca descrição por label inline quando não achou bloco
+  if (!result.descricao) {
+    result.descricao = extractReg(text, [
+      /[Dd]iscrimina[çc][ãa]o\s+dos\s+[Ss]ervi[çc]os?\s*:?\s*([^\n]{10,})/i,
+      /[Dd]escri[çc][ãa]o\s+do\s+[Ss]ervi[çc]o\s*:?\s*([^\n]{10,})/i,
+      /[Ss]ervi[çc]os?\s+[Pp]restados?\s*:?\s*([^\n]{10,})/i,
+    ])?.trim();
   }
 
   // OF no texto da discriminação (ex: "OF: 6866682")
@@ -593,38 +645,51 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
 
   // ── Valores financeiros ────────────────────────────────────────────────────────
   // "Valor bruto = R$ X" (formato com = ou : )
+  // 7.4 — Variantes municipais para valores financeiros
   result.valorBruto = extractFloat(text, [
     new RegExp(`Valor\\s+bruto\\s*[=:][\\s]*R\\$\\s*${V}`, 'i'),
     new RegExp(`Valor\\s+bruto[^\\n]*${V}`, 'i'),
+    new RegExp(`Valor\\s+do\\s+[Ss]ervi[çc]o[^\\n]*${V}`, 'i'),
+    new RegExp(`Valor\\s+dos\\s+[Ss]ervi[çc]os[^\\n]*${V}`, 'i'),
+    new RegExp(`Valor\\s+[Tt]otal[^\\n]*${V}`, 'i'),
   ]);
 
   result.valorLiquido = extractFloat(text, [
     new RegExp(`Valor\\s+l[íi]quido\\s*[=:][\\s]*R\\$\\s*${V}`, 'i'),
     new RegExp(`Valor\\s+l[íi]quido[^\\n]*${V}`, 'i'),
+    new RegExp(`Valor\\s+a\\s+[Rr]eceber[^\\n]*${V}`, 'i'),
+    new RegExp(`Valor\\s+[Ll][íi]quido\\s+a\\s+[Pp]agar[^\\n]*${V}`, 'i'),
+    new RegExp(`[Ll][íi]quido\\s+a\\s+[Rr]eceber[^\\n]*${V}`, 'i'),
   ]);
 
   // Base de cálculo
   result.baseCalculo = extractFloat(text, [
     new RegExp(`Base\\s+de\\s+[Cc][áa]lculo[^\\n]*${V}`, 'i'),
     new RegExp(`BASE\\s+DE\\s+C[AÁ]LCULO\\s*${V}`, 'i'),
+    new RegExp(`Base\\s+de\\s+tributa[çc][ãa]o[^\\n]*${V}`, 'i'),
   ]);
   result.baseCalculo ??= result.valorBruto; // padrão: sem deduções
 
-  // Alíquota ISS
+  // Alíquota ISS — aceita ISS, ISSQN e variantes
   result.aliquota = extractFloat(text, [
-    /Al[íi]quota\s+(?:do\s+)?ISS[^0-9]*([\d,]+)\s*%/i,
+    /Al[íi]quota\s+(?:do\s+)?ISS(?:QN)?[^0-9]*([\d,]+)\s*%/i,
     /Al[íi]quota[:\s]+([\d,]+)\s*%/i,
     /\b([\d,]+)\s*%\s*(?:ISS|ISSQN)/i,
+    /Al[íi]quota\s+[Ee]fetiva[:\s]+([\d,]+)\s*%/i,
   ]);
 
-  // Valor ISS (do resumo, não da tabela)
+  // Valor ISS — variantes de layout
   result.valorIss ??= extractFloat(text, [
-    new RegExp(`Valor\\s+ISS[^\\n]*?${V}`, 'i'),
-    new RegExp(`ISS\\s*=\\s*${V}`, 'i'),
+    new RegExp(`Valor\\s+ISS(?:QN)?[^\\n]*?${V}`, 'i'),
+    new RegExp(`ISS(?:QN)?\\s*=\\s*${V}`, 'i'),
+    new RegExp(`Valor\\s+do\\s+ISS(?:QN)?[^\\n]*${V}`, 'i'),
+    new RegExp(`ISS(?:QN)?\\s+[Aa]\\s+[Rr]ecolher[^\\n]*${V}`, 'i'),
   ]);
 
   // ── Retenções Federais ─────────────────────────────────────────────────────────
-  const retBlock = retStart >= 0 ? text.slice(retStart, retStart + 800) : '';
+  // 7.2 — Limite dinâmico do bloco de retenções: usa outStart quando disponível
+  const retEnd = outStart > retStart && outStart > 0 ? outStart : retStart + 900;
+  const retBlock = retStart >= 0 ? text.slice(retStart, retEnd) : '';
 
   // Padrão: LABEL seguido de R$ VALOR (mesma linha ou linha seguinte)
   const retP = (label: string) => [
@@ -633,16 +698,20 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
     new RegExp(`${label}[:\\s]+([\\d.]+,\\d{2})`, 'i'),
   ];
 
-  result.pisPasep        = extractFloat(retBlock, retP('PIS\\s*\\/\\s*PASEP'));
-  result.cofins          = extractFloat(retBlock, retP('COFINS'));
-  result.inss            = extractFloat(retBlock, retP('INSS'));
-  result.ir              = extractFloat(retBlock, [
+  // 7.3 — Fallback quando o bloco de retenções não foi encontrado (header diferente):
+  // tenta buscar rótulos de retenção em todo o texto
+  const searchText = retBlock || text;
+
+  result.pisPasep        = extractFloat(searchText, retP('PIS\\s*\\/\\s*PASEP'));
+  result.cofins          = extractFloat(searchText, retP('COFINS'));
+  result.inss            = extractFloat(searchText, retP('INSS'));
+  result.ir              = extractFloat(searchText, [
     ...retP('\\bIR\\b'),
     ...retP('\\bIRRF\\b'),
     ...retP('Imposto\\s+de\\s+Renda'),
   ]);
-  result.csll            = extractFloat(retBlock, retP('CSLL'));
-  result.outrasRetencoes = extractFloat(retBlock, retP('Outras\\s+Reten[çc][õo]es'));
+  result.csll            = extractFloat(searchText, retP('CSLL'));
+  result.outrasRetencoes = extractFloat(searchText, retP('Outras\\s+Reten[çc][õo]es'));
 
   // 5.1 — Fallback posicional: só ativa se TODOS os 5 campos principais forem nulos
   // e os valores encontrados forem plausíveis (< 30% do bruto), evitando confundir
@@ -666,32 +735,40 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   }
 
   // ── Outras Informações Fiscais ─────────────────────────────────────────────────
-  const outBlock = outStart >= 0 ? text.slice(outStart) : text.slice(-2500);
+  // 7.7 — Busca em todo o texto quando bloco não foi delimitado (outStart=-1)
+  const outBlock = outStart >= 0 ? text.slice(outStart) : text.slice(-3000);
+  const anyBlock = outBlock || text;   // garante busca mesmo sem seção final
 
-  result.naturezaOperacao = extractReg(outBlock, [
+  result.naturezaOperacao = extractReg(anyBlock, [
     /[Nn]atureza\s+da\s+opera[çc][ãa]o[:\s]+([^\n]+)/i,
-    /(Opera[çc][ãa]o\s+Tribut[áa]vel|Opera[çc][ãa]o\s+Isenta|Exporta[çc][ãa]o)/i,
+    /[Nn]atureza\s+da\s+[Oo]pera[çc][ãa]o\s+Tribut[áa]ria[:\s]+([^\n]+)/i,
+    /(Opera[çc][ãa]o\s+Tribut[áa]vel|Opera[çc][ãa]o\s+Isenta|Exporta[çc][ãa]o\s+de\s+[Ss]ervi[çc]o)/i,
+    /(Tribut[áa]vel\s+dentro\s+do\s+munic[íi]pio|Isenta\s+ou\s+imune)/i,
   ])?.trim();
 
-  result.situacaoTributariaIssqn = extractReg(outBlock, [
+  result.situacaoTributariaIssqn = extractReg(anyBlock, [
     /[Ss]itua[çc][ãa]o\s+[Tt]ributária\s+do\s+ISSQN[:\s]+([^\n]+)/i,
     /[Ss]itua[çc][ãa]o\s+[Tt]ributária\s+ISSQN[:\s]+([^\n]+)/i,
-    /(Reten[çc][ãa]o|Exig[íi]vel\s+\w+|Isento|Imune)/i,
+    /[Ss]itua[çc][ãa]o\s+ISSQN[:\s]+([^\n]+)/i,
+    /(Reten[çc][ãa]o\s+na\s+[Ff]onte|Exig[íi]vel\s+\w+|Isento|Imune\s+de\s+ISSQN)/i,
   ])?.trim();
 
-  result.localPrestacao = extractReg(outBlock, [
+  result.localPrestacao = extractReg(anyBlock, [
     /[Ll]ocal\s+da\s+presta[çc][ãa]o\s+do\s+servi[çc]o[:\s]+([^\n]+)/i,
     /[Ll]ocal\s+da\s+presta[çc][ãa]o[:\s]+([^\n]+)/i,
     /[Ll]ocal\s+de\s+presta[çc][ãa]o[:\s]+([^\n]+)/i,
+    /[Mm]unic[íi]pio\s+de\s+presta[çc][ãa]o[:\s]+([^\n]+)/i,
   ])?.trim();
 
-  result.situacaoNfse = extractReg(outBlock, [
+  result.situacaoNfse = extractReg(anyBlock, [
     /[Ss]itua[çc][ãa]o\s+desta\s+NFS?-?e[:\s]+([^\n.]+)/i,
-    /(Retida|Normal|Cancelada|Em\s+Aberto)/i,
+    /[Ss]itua[çc][ãa]o\s+da\s+NFS?-?e[:\s]+([^\n.]+)/i,
+    /[Ss]itua[çc][ãa]o[:\s]+(Normal|Cancelad[ao]|Em\s+Aberto|Substituid[ao]|Retida)/i,
+    /(Cancelad[ao]|Em\s+Aberto|Substituid[ao])\s+(?=—|–|-|\n)/i,
   ])?.trim();
 
-  result.regimeTributario = extractReg(outBlock, [
-    /(Simples\s+Nacional|Lucro\s+Real|Lucro\s+Presumido|MEI)/i,
+  result.regimeTributario = extractReg(anyBlock, [
+    /(Simples\s+Nacional|Lucro\s+Real|Lucro\s+Presumido|MEI|Microempreendedor)/i,
   ])?.trim();
 
   result.simplesNacional = /[Ss]imples\s+[Nn]acional/i.test(text);
