@@ -26,11 +26,12 @@ export default function Dashboard() {
     }).catch(() => setLoading(false));
   }, []);
 
-  // Notas do mês atual
+  // Notas do mês atual — usa dataEmissao se disponível, senão createdAt
   const now = new Date();
   const notasMes = notas.filter(n => {
-    if (!n.dataEmissao) return false;
-    const d = new Date(n.dataEmissao);
+    const rawDate = n.dataEmissao || n.createdAt;
+    if (!rawDate) return false;
+    const d = new Date(rawDate);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
 

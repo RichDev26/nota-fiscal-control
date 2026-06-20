@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 import type { ResumoRelatorio } from '@/types';
 
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
     const { searchParams } = new URL(req.url);
     const dataInicio = searchParams.get('dataInicio') || '';
     const dataFim = searchParams.get('dataFim') || '';
     const status = searchParams.get('status') || '';
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { usuarioId: session.sub };
 
     if (dataInicio || dataFim) {
       where.dataEmissao = {
