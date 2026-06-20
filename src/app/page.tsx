@@ -2,22 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { PlusCircle, FileText, ChevronRight, TrendingUp, DollarSign, Receipt, Zap } from 'lucide-react';
+import { PlusCircle, FileText, ChevronRight, TrendingUp, DollarSign, Receipt } from 'lucide-react';
 import { formatarMoeda, formatarData } from '@/lib/validators';
 import { STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { NotaFiscal } from '@/types';
 
-const USER_NAME = 'Richard';
-
 export default function Dashboard() {
-  const [notas, setNotas]   = useState<NotaFiscal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [notas,    setNotas]    = useState<NotaFiscal[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [userName, setUserName] = useState('');
 
   useEffect(() => {
-    fetch('/api/notas?por=200&ordenarPor=createdAt&ordem=desc')
-      .then(r => r.json())
-      .then(d => { setNotas(d.notas || []); setLoading(false); })
-      .catch(() => setLoading(false));
+    // Carregar dados em paralelo
+    Promise.all([
+      fetch('/api/notas?por=200&ordenarPor=createdAt&ordem=desc').then(r => r.json()),
+      fetch('/api/auth/me').then(r => r.ok ? r.json() : null),
+    ]).then(([notas, me]) => {
+      setNotas(notas.notas || []);
+      if (me?.usuario?.nome) {
+        setUserName(me.usuario.nome.split(' ')[0]);
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
 
   // Notas do mês atual
@@ -50,7 +56,7 @@ export default function Dashboard() {
         <div>
           <p className="text-gray-400 text-sm font-medium">Bem-vindo de volta</p>
           <h1 className="text-3xl font-bold text-gray-900 mt-0.5">
-            Olá, {USER_NAME} 👋
+            Olá, {userName || 'Bem-vindo'} 👋
           </h1>
         </div>
         <Link href="/notas/nova" className="btn-primary btn-lg shrink-0 hidden sm:flex">

@@ -67,6 +67,13 @@
 
 /* ── Animações ──────────────────────────────────────────────────────────────── */
 
+/* Auth wizard step enter */
+@keyframes authStepIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.auth-step-enter { animation: authStepIn 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+
 /* Wizard enter */
 @keyframes wizardEnter {
   from { opacity: 0; transform: translateY(18px) scale(0.98); }

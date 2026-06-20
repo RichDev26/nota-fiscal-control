@@ -1,8 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FileText, BarChart2, Receipt, Settings } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { LayoutDashboard, FileText, BarChart2, Receipt, Settings, LogOut } from 'lucide-react';
 
 const links = [
   { href: '/',           label: 'Dashboard',  icon: LayoutDashboard },
@@ -13,6 +14,29 @@ const links = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router   = useRouter();
+  const [usuario, setUsuario] = useState<{ nome: string; email: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d?.usuario && setUsuario(d.usuario));
+  }, []);
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/auth');
+    router.refresh();
+  }
+
+  const initials = usuario?.nome
+    ?.split(' ')
+    .slice(0, 2)
+    .map(p => p[0])
+    .join('')
+    .toUpperCase() ?? '?';
+
+  const firstName = usuario?.nome?.split(' ')[0] ?? '';
 
   return (
     <aside className="w-52 bg-white border-r border-gray-100 flex flex-col shrink-0 h-full hidden md:flex">
@@ -56,13 +80,39 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom */}
-      <div className="px-3 py-3 border-t border-gray-50">
+      {/* Bottom — usuário + logout */}
+      <div className="px-3 py-3 border-t border-gray-50 space-y-1">
+
+        {/* Configurações */}
         <button className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-semibold text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-all">
           <Settings size={16} />
           <span>Configurações</span>
         </button>
-        <p className="text-[10px] text-gray-300 px-3 mt-2">v1.0.0</p>
+
+        {/* Perfil do usuário */}
+        {usuario && (
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-gray-50">
+            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+              <span className="text-white text-[10px] font-bold">{initials}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-gray-800 truncate">{firstName}</p>
+              <p className="text-[10px] text-gray-400 truncate">{usuario.email}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-3 py-2 w-full rounded-xl text-sm text-gray-400
+            hover:bg-red-50 hover:text-red-600 transition-all"
+        >
+          <LogOut size={15} />
+          <span>Sair</span>
+        </button>
+
+        <p className="text-[10px] text-gray-300 px-3 pt-1">v1.0.0</p>
       </div>
     </aside>
   );

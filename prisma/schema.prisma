@@ -211,3 +211,14 @@ model LogSistema {
 
   @@index([tipo, timestamp])
 }
+
+// ─── Autenticação ─────────────────────────────────────────────────────────────
+
+model Usuario {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  senhaHash    String
+  nome         String
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
