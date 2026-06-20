@@ -46,6 +46,20 @@ function ensureDir(): void {
 function appendEvento(evento: AuditoriaEvento): void {
   ensureDir();
   fs.appendFileSync(EVENTOS_PATH, JSON.stringify(evento) + '\n', 'utf-8');
+  // Write-through: persiste evento no DB para sobreviver a redeploys
+  import('@/lib/prisma').then(({ default: prisma }) =>
+    prisma.eventoAuditoria.upsert({
+      where:  { id: evento.evento_id },
+      create: {
+        id:         evento.evento_id,
+        timestamp:  new Date(evento.timestamp),
+        categoria:  String(evento.categoria),
+        severidade: String(evento.severidade),
+        dados:      JSON.stringify(evento),
+      },
+      update: { dados: JSON.stringify(evento) },
+    })
+  ).catch(err => console.error('[Auditoria] Falha ao sincronizar DB:', err));
 }
 
 export function carregarEventos(): AuditoriaEvento[] {

@@ -401,6 +401,27 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
     return allDatesGlobal[1] ? toISO(allDatesGlobal[1].date) : undefined;
   })();
 
+  // 5.2 — Data de Vencimento
+  result.dataVencimento = (() => {
+    const s = extractReg(text, [
+      /[Vv]encimento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /Data\s+d[eo]\s+[Vv]encimento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /Data\s+[Vv]encimento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+    ]);
+    return s ? toISO(s) : undefined;
+  })();
+
+  // 5.2 — Data de Recebimento / Pagamento
+  result.dataRecebimento = (() => {
+    const s = extractReg(text, [
+      /[Rr]ecebimento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /Data\s+d[eo]\s+[Rr]ecebimento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /[Pp]agamento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+      /Data\s+d[eo]\s+[Pp]agamento\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i,
+    ]);
+    return s ? toISO(s) : undefined;
+  })();
+
   // ── OF / OS ───────────────────────────────────────────────────────────────
   result.of = extractReg(text, [
     /\bO[Ff]\s*[:\s.]+(\d{5,})/i,
@@ -623,19 +644,24 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   result.csll            = extractFloat(retBlock, retP('CSLL'));
   result.outrasRetencoes = extractFloat(retBlock, retP('Outras\\s+Reten[çc][õo]es'));
 
-  // Fallback posicional: 6 valores R$ em sequência no bloco de retenções
-  if (retBlock && (result.pisPasep == null || result.cofins == null)) {
+  // 5.1 — Fallback posicional: só ativa se TODOS os 5 campos principais forem nulos
+  // e os valores encontrados forem plausíveis (< 30% do bruto), evitando confundir
+  // ISS ou outros valores com retenções.
+  const todosNull = result.pisPasep == null && result.cofins == null &&
+    result.inss == null && result.ir == null && result.csll == null;
+  if (retBlock && todosNull) {
+    const maxPlausivel = (result.valorBruto ?? 10000) * 0.3;
     const vals = Array.from(retBlock.matchAll(/R\$\s*([\d.]+,\d{2})/g)).map(m => {
       const n = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
       return isNaN(n) ? undefined : n;
     });
-    if (vals.length >= 6) {
-      result.pisPasep        ??= vals[0];
-      result.cofins          ??= vals[1];
-      result.inss            ??= vals[2];
-      result.ir              ??= vals[3];
-      result.csll            ??= vals[4];
-      result.outrasRetencoes ??= vals[5];
+    if (vals.length >= 5 && vals.slice(0, 5).every(v => v != null && v! <= maxPlausivel)) {
+      result.pisPasep        = vals[0];
+      result.cofins          = vals[1];
+      result.inss            = vals[2];
+      result.ir              = vals[3];
+      result.csll            = vals[4];
+      result.outrasRetencoes = vals[5] != null && vals[5]! <= maxPlausivel ? vals[5] : undefined;
     }
   }
 

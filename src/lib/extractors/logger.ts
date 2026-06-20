@@ -37,9 +37,15 @@ function ensureDir(): void {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function appendLog(caminho: string, obj: unknown): void {
+function appendLog(caminho: string, obj: unknown, tipo: 'tecnico' | 'negocio', nivel?: string): void {
   ensureDir();
   fs.appendFileSync(caminho, JSON.stringify(obj) + '\n', 'utf-8');
+  // Write-through: persiste log no DB para sobreviver a redeploys
+  import('@/lib/prisma').then(({ default: prisma }) =>
+    prisma.logSistema.create({
+      data: { tipo, nivel: nivel ?? null, dados: JSON.stringify(obj) },
+    })
+  ).catch(() => { /* log write failures are non-fatal */ });
 }
 
 // ─── REDAÇÃO DE PII ───────────────────────────────────────────────────────────
@@ -93,7 +99,7 @@ export function logTecnico(
     versao_motor: VERSAO_MOTOR,
   };
 
-  appendLog(LOG_TEC_PATH, log);
+  appendLog(LOG_TEC_PATH, log, 'tecnico', nivel);
 
   if (nivel === 'ERROR' || nivel === 'FATAL') {
     console.error(`[${nivel}][${componente}] ${log.mensagem}`);
@@ -153,7 +159,7 @@ export function logNegocio(
     timestamp:    new Date().toISOString(),
     resultado:    resultado ?? 'SUCESSO',
   };
-  appendLog(LOG_NEG_PATH, log);
+  appendLog(LOG_NEG_PATH, log, 'negocio');
   return log;
 }
 

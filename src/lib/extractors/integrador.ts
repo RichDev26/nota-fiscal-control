@@ -18,6 +18,8 @@ import { validateCrossCheck } from './validacao-cruzada';
 import type { ValidacaoCruzadaResult } from './validacao-cruzada';
 import { logInfo, logError, logNegocio } from './logger';
 import { validarDocumento } from '@/lib/validators/documento-fiscal';
+import { inicializarBase } from './base-conhecimento';
+import { inicializarLogs } from './motor-correcoes';
 
 const VERSAO_INTEGRADOR = '1.0.0';
 
@@ -175,6 +177,38 @@ function mapearResultado(cruzado: ValidacaoCruzadaResult): PdfExtractResult {
 
 // ─── VALIDAÇÃO PÓS-EXTRAÇÃO ───────────────────────────────────────────────────
 
+/** 5.3 — Alerta sobre retenções PIS/COFINS/CSLL em empresas do Simples Nacional */
+function alertarRetencoesSimples(resultado: PdfExtractResult): PdfExtractResult {
+  if (!resultado.simplesNacional) return resultado;
+  const alertas: string[] = [];
+  if (resultado.pisPasep) alertas.push('Simples Nacional: empresa optante não sofre retenção de PIS/PASEP na fonte — verificar se o valor é correto');
+  if (resultado.cofins)   alertas.push('Simples Nacional: empresa optante não sofre retenção de COFINS na fonte — verificar se o valor é correto');
+  if (resultado.csll)     alertas.push('Simples Nacional: empresa optante não sofre retenção de CSLL na fonte — verificar se o valor é correto');
+  if (alertas.length === 0) return resultado;
+  return {
+    ...resultado,
+    inconsistencias: [...(resultado.inconsistencias ?? []), ...alertas],
+  };
+}
+
+/** 5.6 — Valida que data do fato gerador não é posterior à data de emissão */
+function validarFatoGerador(resultado: PdfExtractResult): PdfExtractResult {
+  if (!resultado.dataFatoGerador || !resultado.dataEmissao) return resultado;
+  const fato    = new Date(resultado.dataFatoGerador);
+  const emissao = new Date(resultado.dataEmissao);
+  if (isNaN(fato.getTime()) || isNaN(emissao.getTime())) return resultado;
+  if (fato > emissao) {
+    return {
+      ...resultado,
+      inconsistencias: [
+        ...(resultado.inconsistencias ?? []),
+        `Data do fato gerador (${resultado.dataFatoGerador}) é posterior à data de emissão (${resultado.dataEmissao}) — verificar`,
+      ],
+    };
+  }
+  return resultado;
+}
+
 /** 3.2 — Bloqueia nota cancelada antes de salvar no banco */
 function verificarNotaCancelada(resultado: PdfExtractResult): void {
   const situacao = resultado.situacaoNfse;
@@ -214,6 +248,9 @@ function validarDocumentosFiscais(resultado: PdfExtractResult): PdfExtractResult
 export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractResult> {
   const t0 = Date.now();
 
+  // Restaura dados de aprendizado do DB caso arquivos locais tenham sido perdidos (pós-deploy)
+  await Promise.all([inicializarBase(), inicializarLogs()]).catch(() => { /* non-fatal */ });
+
   try {
     logInfo('integrador', 'Iniciando extração — motor Fases 1-11');
 
@@ -223,6 +260,8 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
     // Validações pós-extração (bloqueiam antes de retornar ao route.ts)
     verificarNotaCancelada(resultado);
     resultado = validarDocumentosFiscais(resultado);
+    resultado = alertarRetencoesSimples(resultado);
+    resultado = validarFatoGerador(resultado);
 
     logInfo('integrador', 'Extração concluída com sucesso', {
       total_campos:        cruzado.estatisticas.total_campos,
@@ -258,7 +297,9 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
 
     // Aplica validações também no resultado do motor legado
     verificarNotaCancelada(resultadoLegado);
-    const comValidacao = validarDocumentosFiscais(resultadoLegado);
+    let comValidacao = validarDocumentosFiscais(resultadoLegado);
+    comValidacao = alertarRetencoesSimples(comValidacao);
+    comValidacao = validarFatoGerador(comValidacao);
 
     return {
       ...comValidacao,

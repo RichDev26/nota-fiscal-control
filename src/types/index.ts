@@ -121,6 +121,8 @@ export interface PdfExtractResult {
   descricao?: string;
   dataEmissao?: string;
   dataFatoGerador?: string;
+  dataVencimento?: string;
+  dataRecebimento?: string;
   municipioEmissor?: string;
   codigoServico?: string;
   quantidade?: number;

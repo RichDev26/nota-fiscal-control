@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { movePdf } from '@/lib/pdf-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,7 +74,7 @@ const NOTA_FIELDS = new Set([
   'naturezaOperacao','situacaoTributariaIssqn','localPrestacao','situacaoNfse',
   'observacoesFiscais','regimeTributario','indicacaoRetencao','observacoesAutenticidade',
   'municipioEmissor','codigoServico','quantidade','valorUnitario',
-  'observacoes','arquivoPdfUrl','pdfData','tags','prestadorId','tomadorId','notaSubstitutivaId',
+  'observacoes','arquivoPdfUrl','tags','prestadorId','tomadorId','notaSubstitutivaId','pdfTempId',
 ]);
 
 export async function POST(req: NextRequest) {
@@ -81,10 +82,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { prestador: prestadorData, tomador: tomadorData, ...rawData } = body;
 
+    // Extrai pdfTempId antes de filtrar — não vai para o Prisma
+    const pdfTempId = typeof rawData.pdfTempId === 'string' ? rawData.pdfTempId : null;
+
     // Remove campos desconhecidos para evitar erros do Prisma
     const notaData: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(rawData)) {
-      if (NOTA_FIELDS.has(k)) notaData[k] = v;
+      if (NOTA_FIELDS.has(k) && k !== 'pdfTempId') notaData[k] = v;
     }
 
     let prestadorId: string | undefined;
@@ -133,26 +137,48 @@ export async function POST(req: NextRequest) {
     const str = (v: unknown) => (v && typeof v === 'string' ? v : null);
     const parseDate = (v: unknown) => { const d = str(v); return d ? new Date(d) : null; };
 
+    // 5.4 — Verificar duplicidade ANTES de criar (numeroNf + prestador + dataEmissao)
+    const resolvedPrestadorId = prestadorId || (str(notaData.prestadorId) ?? undefined);
+    const resolvedEmissao     = parseDate(notaData.dataEmissao);
+    if (notaData.numeroNf && resolvedPrestadorId && resolvedEmissao) {
+      const dup = await prisma.notaFiscal.findFirst({
+        where: {
+          numeroNf:    String(notaData.numeroNf),
+          prestadorId: resolvedPrestadorId,
+          dataEmissao: resolvedEmissao,
+        },
+        select: { id: true, numeroNf: true },
+      });
+      if (dup) {
+        return NextResponse.json(
+          { error: `Nota duplicada: NF ${dup.numeroNf} deste prestador já existe (id: ${dup.id})`, duplicadaId: dup.id },
+          { status: 409 },
+        );
+      }
+    }
+
     const nota = await prisma.notaFiscal.create({
       data: {
         ...notaData,
-        dataEmissao:    parseDate(notaData.dataEmissao),
+        dataEmissao:     resolvedEmissao,
         dataFatoGerador: parseDate(notaData.dataFatoGerador),
-        dataVencimento: parseDate(notaData.dataVencimento),
+        dataVencimento:  parseDate(notaData.dataVencimento),
         dataRecebimento: parseDate(notaData.dataRecebimento),
-        prestadorId: prestadorId || (str(notaData.prestadorId) ?? undefined),
-        tomadorId:   tomadorId   || (str(notaData.tomadorId)   ?? undefined),
+        prestadorId: resolvedPrestadorId,
+        tomadorId:   tomadorId || (str(notaData.tomadorId) ?? undefined),
       },
       include: { prestador: true, tomador: true },
     });
 
-    // Verificar duplicidade de número de NF
-    if (nota.numeroNf) {
-      const dup = await prisma.notaFiscal.count({
-        where: { numeroNf: nota.numeroNf, id: { not: nota.id } },
-      });
-      if (dup > 0) {
-        return NextResponse.json({ nota, aviso: `Atenção: já existe outra nota com o número ${nota.numeroNf}` });
+    // 4.1 — Finalizar PDF: mover de temp-{uuid} para {notaId} e atualizar URL
+    if (pdfTempId) {
+      const moved = movePdf(pdfTempId, nota.id);
+      if (moved) {
+        await prisma.notaFiscal.update({
+          where: { id: nota.id },
+          data:  { arquivoPdfUrl: `/api/notas/${nota.id}/pdf` },
+        });
+        (nota as Record<string, unknown>).arquivoPdfUrl = `/api/notas/${nota.id}/pdf`;
       }
     }
 

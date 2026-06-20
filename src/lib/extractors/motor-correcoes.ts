@@ -48,6 +48,35 @@ function salvarLog(log: RegistroCorrecao[]): void {
   fs.writeFileSync(LOG_PATH, JSON.stringify(log, null, 2), 'utf-8');
 }
 
+function syncCorrecaoDb(reg: RegistroCorrecao): void {
+  // Write-through: persiste correção no DB para sobreviver a redeploys
+  import('@/lib/prisma').then(({ default: prisma }) =>
+    prisma.correcaoLogDb.upsert({
+      where:  { id: reg.id },
+      create: { id: reg.id, dados: JSON.stringify(reg) },
+      update: { dados: JSON.stringify(reg) },
+    })
+  ).catch(err => console.error('[CorrecaoLog] Falha ao sincronizar DB:', err));
+}
+
+/**
+ * Restaura log de correções do DB caso o arquivo local tenha sido perdido.
+ */
+export async function inicializarLogs(): Promise<void> {
+  if (fs.existsSync(LOG_PATH)) return;
+  try {
+    const { default: prisma } = await import('@/lib/prisma');
+    const rows = await prisma.correcaoLogDb.findMany({ orderBy: { createdAt: 'asc' } });
+    if (rows.length > 0) {
+      const log = rows.map(r => JSON.parse(r.dados) as RegistroCorrecao);
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(LOG_PATH, JSON.stringify(log, null, 2), 'utf-8');
+    }
+  } catch {
+    // DB indisponível — prossegue com log vazio
+  }
+}
+
 // ─── VALIDAÇÃO DE FORMATO ────────────────────────────────────────────────────
 
 const FORMATO_POR_CAMPO: Record<string, NormTipo> = {
@@ -179,6 +208,7 @@ export function registrarCorrecao(entrada: EntradaCorrecao): RegistroCorrecao {
 
   log.push(registro);
   salvarLog(log);
+  syncCorrecaoDb(registro);
   return registro;
 }
 
@@ -284,6 +314,7 @@ export function processarAprendizado(
     // Atualizar no log
     if (logIdx >= 0) {
       log[logIdx] = reg;
+      syncCorrecaoDb(reg);
     }
   }
 

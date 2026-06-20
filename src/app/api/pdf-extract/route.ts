@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 import { extractFromPdfBuffer, NotaCanceladaError } from '@/lib/extractors/integrador';
 import { checkRateLimit } from '@/lib/rate-limiter';
+import { savePdf, generateTempId } from '@/lib/pdf-storage';
 
 const MAX_BYTES = 50 * 1024 * 1024; // 50MB
 
@@ -48,15 +49,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const bytes  = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const pdfData = buffer.toString('base64');
+    const bytes    = await file.arrayBuffer();
+    const buffer   = Buffer.from(bytes);
+    const tempId   = generateTempId();
+    savePdf(buffer, tempId);
 
     const result = await extractFromPdfBuffer(buffer);
 
     return NextResponse.json({
       ...result,
-      pdfData,
+      pdfTempId:    tempId,
       arquivoPdfUrl: `/api/notas/pdf-preview`,
     });
 

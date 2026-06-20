@@ -173,3 +173,41 @@ model AlertaFila {
   @@index([tipo, resolvido])
   @@index([severidade, resolvido])
 }
+
+// ─── Parte 4 — Persistência entre deploys ─────────────────────────────────────
+
+model BaseConhecimentoDb {
+  id        String   @id @default("singleton")
+  dados     String
+  versao    String
+  updatedAt DateTime @updatedAt
+}
+
+model CorrecaoLogDb {
+  id        String   @id
+  dados     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EventoAuditoria {
+  id         String   @id
+  timestamp  DateTime
+  categoria  String
+  severidade String
+  dados      String
+  createdAt  DateTime @default(now())
+
+  @@index([categoria, timestamp])
+  @@index([severidade, timestamp])
+}
+
+model LogSistema {
+  id        String   @id @default(cuid())
+  tipo      String
+  nivel     String?
+  dados     String
+  timestamp DateTime @default(now())
+
+  @@index([tipo, timestamp])
+}

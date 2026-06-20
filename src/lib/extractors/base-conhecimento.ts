@@ -173,6 +173,38 @@ export function carregarBase(): BaseConhecimento {
 export function salvarBase(base: BaseConhecimento): void {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(BASE_PATH, JSON.stringify(base, null, 2), 'utf-8');
+  // Write-through: persiste no DB para sobreviver a redeploys (Railway)
+  import('@/lib/prisma').then(({ default: prisma }) =>
+    prisma.baseConhecimentoDb.upsert({
+      where:  { id: 'singleton' },
+      create: { id: 'singleton', dados: JSON.stringify(base), versao: base.versao },
+      update: { dados: JSON.stringify(base), versao: base.versao },
+    })
+  ).catch(err => console.error('[BaseConhecimento] Falha ao sincronizar DB:', err));
+}
+
+/**
+ * Chamada no início do servidor para restaurar a base de aprendizado do DB
+ * caso o arquivo local tenha sido perdido (pós-deploy Railway sem volume).
+ */
+export async function inicializarBase(): Promise<void> {
+  if (fs.existsSync(BASE_PATH)) return;
+  try {
+    const { default: prisma } = await import('@/lib/prisma');
+    const row = await prisma.baseConhecimentoDb.findUnique({ where: { id: 'singleton' } });
+    if (row) {
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(BASE_PATH, row.dados, 'utf-8');
+      return;
+    }
+  } catch {
+    // DB indisponível na inicialização — prossegue com seed
+  }
+  // Nenhum dado no DB — cria seed e já persiste
+  const seed = criarBaseSeed();
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(BASE_PATH, JSON.stringify(seed, null, 2), 'utf-8');
+  salvarBase(seed);
 }
 
 // ─── CONSULTAS ────────────────────────────────────────────────────────────────
