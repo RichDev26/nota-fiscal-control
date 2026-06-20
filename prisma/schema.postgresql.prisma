@@ -116,3 +116,98 @@ model HistoricoAlteracao {
   dataAcao      DateTime   @default(now())
   notaFiscal    NotaFiscal @relation(fields: [notaFiscalId], references: [id], onDelete: Cascade)
 }
+
+// ─── FASE 12 — Fila de Processamento de Produção ──────────────────────────────
+
+model JobFila {
+  id               String    @id @default(cuid())
+  tipo             String
+  status           String    @default("PENDENTE")
+  prioridade       Int       @default(5)
+  tentativas       Int       @default(0)
+  maxTentativas    Int       @default(3)
+  documentoId      String?
+  arquivoHash      String?
+  payload          String    @default("{}")
+  resultado        String?
+  erro             String?
+  workerId         String?
+  iniciadoEm       DateTime?
+  concluidoEm      DateTime?
+  proximaTentativa DateTime?
+  timeoutSegundos  Int       @default(120)
+  dependencias     String    @default("[]")
+  versaoMotor      String    @default("12.0.0")
+  usuarioId        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status, proximaTentativa, prioridade])
+  @@index([documentoId])
+  @@index([arquivoHash])
+}
+
+model MetricaFila {
+  id         String   @id @default(cuid())
+  nome       String
+  valor      Float
+  unidade    String?
+  dimensoes  String?
+  periodoMin Int      @default(1)
+  timestamp  DateTime @default(now())
+
+  @@index([nome, timestamp])
+}
+
+model AlertaFila {
+  id          String    @id @default(cuid())
+  tipo        String
+  severidade  String
+  mensagem    String
+  detalhes    String?
+  resolvido   Boolean   @default(false)
+  resolvidoEm DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tipo, resolvido])
+  @@index([severidade, resolvido])
+}
+
+// ─── Parte 4 — Persistência entre deploys ─────────────────────────────────────
+
+model BaseConhecimentoDb {
+  id        String   @id @default("singleton")
+  dados     String
+  versao    String
+  updatedAt DateTime @updatedAt
+}
+
+model CorrecaoLogDb {
+  id        String   @id
+  dados     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EventoAuditoria {
+  id         String   @id
+  timestamp  DateTime
+  categoria  String
+  severidade String
+  dados      String
+  createdAt  DateTime @default(now())
+
+  @@index([categoria, timestamp])
+  @@index([severidade, timestamp])
+}
+
+model LogSistema {
+  id        String   @id @default(cuid())
+  tipo      String
+  nivel     String?
+  dados     String
+  timestamp DateTime @default(now())
+
+  @@index([tipo, timestamp])
+}
