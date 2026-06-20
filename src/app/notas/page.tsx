@@ -297,13 +297,15 @@ function NotasContent() {
 
         {showFilters && (
           <div className="card p-4 space-y-3 animate-enter">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <select className="input-sm input col-span-2 sm:col-span-1" value={status} onChange={e => { setStatus(e.target.value); setPagina(1); }}>
+            <div className="space-y-2 sm:grid sm:grid-cols-4 sm:gap-2 sm:space-y-0">
+              <select className="input-sm input" value={status} onChange={e => { setStatus(e.target.value); setPagina(1); }}>
                 <option value="">Todos os status</option>
                 {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
               </select>
-              <input type="date" className="input-sm input" value={dataInicio} onChange={e => { setDataInicio(e.target.value); setPagina(1); }} title="De" />
-              <input type="date" className="input-sm input" value={dataFim} onChange={e => { setDataFim(e.target.value); setPagina(1); }} title="Até" />
+              <div className="grid grid-cols-2 gap-2 sm:contents">
+                <input type="date" className="input-sm input min-w-0" value={dataInicio} onChange={e => { setDataInicio(e.target.value); setPagina(1); }} />
+                <input type="date" className="input-sm input min-w-0" value={dataFim} onChange={e => { setDataFim(e.target.value); setPagina(1); }} />
+              </div>
               {(status || dataInicio || dataFim) && (
                 <button className="btn-ghost btn-sm text-red-500 text-xs" onClick={() => { setStatus(''); setDataInicio(''); setDataFim(''); setPagina(1); }}>
                   Limpar

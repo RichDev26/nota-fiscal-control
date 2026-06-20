@@ -495,7 +495,7 @@ export default function NovaNotaPage() {
             <label className="label">Número NF</label>
             <input className="input" placeholder="187" value={form.numeroNf || ''} onChange={e => sf('numeroNf', e.target.value)} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Data Emissão</label>
               <input type="date" className="input" value={form.dataEmissao || ''} onChange={e => sf('dataEmissao', e.target.value)} />

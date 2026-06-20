@@ -81,7 +81,7 @@ function ImpostoModal({ editId, initial, onClose, onSaved }: {
             <input type="number" step="0.01" className="input text-lg font-bold" placeholder="0,00"
               value={form.valor} onChange={e => f('valor', e.target.value)} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Mês Referência</label>
               <input type="month" className="input" value={form.mesReferencia} onChange={e => f('mesReferencia', e.target.value)} />
@@ -91,7 +91,7 @@ function ImpostoModal({ editId, initial, onClose, onSaved }: {
               <input type="date" className="input" value={form.dataVencimento} onChange={e => f('dataVencimento', e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Pagamento</label>
               <input type="date" className="input" value={form.dataPagamento} onChange={e => f('dataPagamento', e.target.value)} />

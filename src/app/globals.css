@@ -140,15 +140,10 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Garante que inputs e botões nunca quebrem abaixo de 44px (touch target iOS/Android) */
+/* Previne zoom automático no iOS ao focar em inputs (exige font-size >= 16px) */
 @media (max-width: 639px) {
-  .input {
-    @apply py-3.5 text-base;  /* text-base evita zoom automático no iOS (mín. 16px) */
-    font-size: 16px !important; /* iOS não faz zoom em inputs com font-size >= 16px */
-  }
-  select.input {
-    font-size: 16px !important;
-  }
+  .input,
+  select.input,
   textarea.input {
     font-size: 16px !important;
   }
