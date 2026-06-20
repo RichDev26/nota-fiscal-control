@@ -17,9 +17,9 @@ const MAX_ATTEMPTS = 5;
 
 function clean() {
   const now = Date.now();
-  for (const [key, bucket] of store.entries()) {
+  store.forEach((bucket, key) => {
     if (now > bucket.resetAt) store.delete(key);
-  }
+  });
 }
 
 export interface RateLimitResult {
