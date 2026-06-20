@@ -235,39 +235,45 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={startEdit} className="btn-secondary btn-sm">
-              <Edit3 size={13} /> Editar
-            </button>
-            <button onClick={handleDuplicate} className="btn-secondary btn-sm">
-              <Copy size={13} /> Duplicar
-            </button>
-            {hasPdf && (
-              <a href={pdfSrc} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
-                <FileText size={13} /> Ver PDF
-              </a>
-            )}
-            <Link href={`/relatorios?nota=${nota.id}`} className="btn-secondary btn-sm">
-              <ClipboardList size={13} /> Relatório
-            </Link>
-            {nota.status !== 'recebida' && (
-              <button onClick={() => handleQuickStatus('recebida')} className="btn-secondary btn-sm text-green-700">
-                <CheckCircle size={13} /> Recebida
+          <div className="space-y-2">
+            {/* Linha 1: ações principais */}
+            <div className="flex gap-2">
+              <button onClick={startEdit} className="btn-secondary btn-sm flex-1 justify-center">
+                <Edit3 size={13} /> Editar
               </button>
-            )}
-            {nota.status !== 'antecipada' && (nota.valorLiquido ?? 0) > 0 && (
-              <button onClick={() => handleQuickStatus('antecipada')} className="btn-amber btn-sm">
-                <Zap size={13} /> Antecipar
+              {hasPdf && (
+                <a href={pdfSrc} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm flex-1 justify-center">
+                  <FileText size={13} /> Ver PDF
+                </a>
+              )}
+              {nota.status !== 'antecipada' && (nota.valorLiquido ?? 0) > 0 && (
+                <button onClick={() => handleQuickStatus('antecipada')} className="btn-amber btn-sm flex-1 justify-center">
+                  <Zap size={13} /> Antecipar
+                </button>
+              )}
+              <button onClick={handleDelete} className="btn-ghost btn-sm text-red-400 hover:text-red-600 shrink-0">
+                <Trash2 size={14} />
               </button>
-            )}
-            {nota.status !== 'cancelada' && (
-              <button onClick={() => handleQuickStatus('cancelada')} className="btn-secondary btn-sm text-red-600">
-                <Ban size={13} /> Cancelar
+            </div>
+            {/* Linha 2: ações secundárias */}
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={handleDuplicate} className="btn-secondary btn-sm">
+                <Copy size={13} /> Duplicar
               </button>
-            )}
-            <button onClick={handleDelete} className="btn-ghost btn-sm text-red-400 hover:text-red-600 ml-auto">
-              <Trash2 size={13} />
-            </button>
+              <Link href={`/relatorios?nota=${nota.id}`} className="btn-secondary btn-sm">
+                <ClipboardList size={13} /> Relatório
+              </Link>
+              {nota.status !== 'recebida' && (
+                <button onClick={() => handleQuickStatus('recebida')} className="btn-secondary btn-sm text-green-700">
+                  <CheckCircle size={13} /> Recebida
+                </button>
+              )}
+              {nota.status !== 'cancelada' && (
+                <button onClick={() => handleQuickStatus('cancelada')} className="btn-secondary btn-sm text-red-600">
+                  <Ban size={13} /> Cancelar
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Mobile PDF link */}
@@ -492,7 +498,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
             <p className="text-xs text-gray-400 mt-0.5">{nota.nomeOrganizador || `NF ${nota.numeroNf}`}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="hidden sm:flex gap-2">
           <button onClick={() => setEditing(false)} className="btn-secondary btn-sm"><X size={14} /> Cancelar</button>
           <button onClick={handleSave} disabled={saving} className="btn-primary">
             <Save size={14} />{saving ? 'Salvando...' : 'Salvar'}
@@ -505,7 +511,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
       {/* Identificação */}
       <div className="card p-5 space-y-4">
         <p className="section-title">Identificação</p>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FEdit label="Nome Organizador" fkey="nomeOrganizador" source={form} setter={sf} />
           <div>
             <label className="label">Status</label>
@@ -533,7 +539,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
           <label className="label">Descrição do Serviço</label>
           <textarea className="input min-h-[80px]" value={String(form.descricao ?? '')} onChange={e => sf('descricao', e.target.value)} />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FEdit label="Cód. Serviço" fkey="codigoServico" source={form} setter={sf} />
           <FEdit label="Quantidade" fkey="quantidade" type="number" source={form} setter={sf} />
           <FEdit label="Valor Unitário" fkey="valorUnitario" type="number" source={form} setter={sf} />
@@ -551,7 +557,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
       {/* Valores */}
       <div className="card p-5 space-y-4">
         <p className="section-title">Valores Financeiros</p>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FEdit label="Valor Bruto" fkey="valorBruto" type="number" source={form} setter={sf} />
           <FEdit label="Valor Líquido" fkey="valorLiquido" type="number" source={form} setter={sf} />
           <FEdit label="Base de Cálculo" fkey="baseCalculo" type="number" source={form} setter={sf} />
@@ -571,7 +577,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
       {/* Prestador */}
       <div className="card p-5 space-y-4">
         <p className="section-title">Prestador de Serviços</p>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FEdit label="Razão Social" fkey="nomeRazaoSocial" source={prestador} setter={sp2} />
           <FEdit label="Nome Fantasia" fkey="nomeFantasia" source={prestador} setter={sp2} />
           <FEdit label="CNPJ/CPF" fkey="cpfCnpj" source={prestador} setter={sp2} />
@@ -593,7 +599,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
       {/* Tomador */}
       <div className="card p-5 space-y-4">
         <p className="section-title">Tomador de Serviços</p>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FEdit label="Razão Social" fkey="nomeRazaoSocial" source={tomador} setter={st} />
           <FEdit label="Nome Fantasia" fkey="nomeFantasia" source={tomador} setter={st} />
           <FEdit label="CNPJ/CPF" fkey="cpfCnpj" source={tomador} setter={st} />
@@ -615,7 +621,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
       {/* Situação Fiscal */}
       <div className="card p-5 space-y-4">
         <p className="section-title">Situação Fiscal</p>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FEdit label="Natureza da Operação" fkey="naturezaOperacao" source={form} setter={sf} />
           <FEdit label="Sit. Tributária ISSQN" fkey="situacaoTributariaIssqn" source={form} setter={sf} />
           <FEdit label="Local de Prestação" fkey="localPrestacao" source={form} setter={sf} />

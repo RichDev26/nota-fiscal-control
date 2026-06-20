@@ -69,16 +69,16 @@ export default function Dashboard() {
           Notas deste mês — {now.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
         </p>
         <div className="grid grid-cols-3 gap-3">
-          <div className="card p-4 text-center">
-            <p className="text-2xl font-bold text-gray-900">{notasMes.length}</p>
+          <div className="card p-3 sm:p-4 text-center">
+            <p className="text-xl sm:text-2xl font-bold text-gray-900">{notasMes.length}</p>
             <p className="text-xs text-gray-400 mt-1 font-medium">Notas</p>
           </div>
-          <div className="card p-4 text-center">
-            <p className="text-lg font-bold text-gray-900 leading-tight">{formatarMoeda(brutoBruto)}</p>
+          <div className="card p-3 sm:p-4 text-center">
+            <p className="text-sm sm:text-lg font-bold text-gray-900 leading-tight tabular-nums">{formatarMoeda(brutoBruto)}</p>
             <p className="text-xs text-gray-400 mt-1 font-medium">Bruto</p>
           </div>
-          <div className="card p-4 text-center">
-            <p className="text-lg font-bold text-green-700 leading-tight">{formatarMoeda(brutoliq)}</p>
+          <div className="card p-3 sm:p-4 text-center">
+            <p className="text-sm sm:text-lg font-bold text-green-700 leading-tight tabular-nums">{formatarMoeda(brutoliq)}</p>
             <p className="text-xs text-gray-400 mt-1 font-medium">Líquido</p>
           </div>
         </div>

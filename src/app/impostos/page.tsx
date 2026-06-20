@@ -223,7 +223,7 @@ export default function ImpostosPage() {
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Impostos</h1>
           </div>
-          {mesBR && <p className="text-sm text-gray-400 capitalize ml-13">{mesBR}</p>}
+          {mesBR && <p className="text-sm text-gray-400 capitalize mt-0.5">{mesBR}</p>}
         </div>
         <button onClick={openNew} className="btn-primary shrink-0">
           <PlusCircle size={15} /> Adicionar

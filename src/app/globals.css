@@ -124,3 +124,32 @@
 ::-webkit-scrollbar-track    { background: transparent; }
 ::-webkit-scrollbar-thumb    { @apply bg-gray-200 rounded-full; }
 ::-webkit-scrollbar-thumb:hover { @apply bg-gray-300; }
+
+/* ── Mobile / Touch ─────────────────────────────────────────────────────────── */
+
+/* Scroll horizontal sem scrollbar visível (chip rows, action rows) */
+.scroll-x-hidden {
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scroll-x-hidden::-webkit-scrollbar { display: none; }
+
+/* Safe area bottom padding helper */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Garante que inputs e botões nunca quebrem abaixo de 44px (touch target iOS/Android) */
+@media (max-width: 639px) {
+  .input {
+    @apply py-3.5 text-base;  /* text-base evita zoom automático no iOS (mín. 16px) */
+    font-size: 16px !important; /* iOS não faz zoom em inputs com font-size >= 16px */
+  }
+  select.input {
+    font-size: 16px !important;
+  }
+  textarea.input {
+    font-size: 16px !important;
+  }
+}

@@ -6,7 +6,7 @@ import MobileNav from '@/components/layout/MobileNav';
 export const metadata: Metadata = {
   title: 'NF Control',
   description: 'Controle de notas fiscais simplificado',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+  viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

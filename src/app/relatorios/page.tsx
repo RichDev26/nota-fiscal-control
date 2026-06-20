@@ -20,7 +20,7 @@ function StatCard({ icon: Icon, iconColor, label, value, sub }: {
         <Icon size={18} />
       </div>
       <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">{label}</p>
-      <p className="text-xl font-bold text-gray-900 leading-tight">{value}</p>
+      <p className="text-base sm:text-xl font-bold text-gray-900 leading-tight tabular-nums">{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
     </div>
   );
@@ -76,7 +76,7 @@ export default function RelatoriosPage() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Relatórios</h1>
         </div>
-        <p className="text-sm text-gray-400 ml-13">Selecione o período e gere o resumo</p>
+        <p className="text-sm text-gray-400 mt-1">Selecione o período e gere o resumo</p>
       </div>
 
       {/* Período */}
