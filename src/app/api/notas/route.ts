@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { movePdf } from '@/lib/pdf-storage';
+import { movePdf, getPdf } from '@/lib/pdf-storage';
 import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -183,13 +183,18 @@ export async function POST(req: NextRequest) {
       include: { prestador: true, tomador: true },
     });
 
-    // 4.1 — Finalizar PDF: mover de temp-{uuid} para {notaId} e atualizar URL
+    // 4.1 — Finalizar PDF: mover de temp-{uuid} para {notaId} e persistir no DB
     if (pdfTempId) {
       const moved = movePdf(pdfTempId, nota.id);
       if (moved) {
+        // Ler do disco e salvar como base64 no DB — garante acesso mesmo se o volume for resetado
+        const pdfBuf = getPdf(nota.id);
         await prisma.notaFiscal.update({
           where: { id: nota.id },
-          data:  { arquivoPdfUrl: `/api/notas/${nota.id}/pdf` },
+          data:  {
+            arquivoPdfUrl: `/api/notas/${nota.id}/pdf`,
+            pdfData:       pdfBuf ? pdfBuf.toString('base64') : undefined,
+          },
         });
         (nota as Record<string, unknown>).arquivoPdfUrl = `/api/notas/${nota.id}/pdf`;
       }

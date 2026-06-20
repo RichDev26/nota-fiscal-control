@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
+    const existing = await prisma.imposto.findUnique({ where: { id: params.id }, select: { usuarioId: true } });
+    if (!existing) return NextResponse.json({ error: 'Imposto não encontrado' }, { status: 404 });
+    if (existing.usuarioId && existing.usuarioId !== session.sub)
+      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+
     const body = await req.json();
     const parseDate = (d: string | null | undefined) => (d ? new Date(d) : null);
 
@@ -26,7 +35,15 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
+    const existing = await prisma.imposto.findUnique({ where: { id: params.id }, select: { usuarioId: true } });
+    if (!existing) return NextResponse.json({ error: 'Imposto não encontrado' }, { status: 404 });
+    if (existing.usuarioId && existing.usuarioId !== session.sub)
+      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+
     await prisma.imposto.delete({ where: { id: params.id } });
     return NextResponse.json({ ok: true });
   } catch (err) {

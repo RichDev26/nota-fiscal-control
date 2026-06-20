@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 import { extractFromPdfBuffer, NotaCanceladaError } from '@/lib/extractors/integrador';
@@ -8,16 +9,8 @@ import { savePdf, generateTempId } from '@/lib/pdf-storage';
 const MAX_BYTES = 50 * 1024 * 1024; // 50MB
 
 export async function POST(req: NextRequest) {
-  // 2.1 Auth: API key via env var (upgrade para NextAuth quando sistema de auth for adicionado)
-  const apiKey = process.env.EXTRACT_API_KEY;
-  if (apiKey) {
-    const provided =
-      req.headers.get('x-api-key') ??
-      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-    if (provided !== apiKey) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    }
-  }
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
   // 2.3 Rate limiting: 30 uploads por hora por IP
   const ip =

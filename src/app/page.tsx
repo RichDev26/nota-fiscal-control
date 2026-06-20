@@ -6,40 +6,35 @@ import { PlusCircle, FileText, ChevronRight, TrendingUp, DollarSign, Receipt } f
 import { formatarMoeda, formatarData } from '@/lib/validators';
 import { STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { NotaFiscal } from '@/types';
+import { useSession } from '@/context/SessionContext';
+
+interface Resumo {
+  countMes:   number;
+  brutoBruto: number;
+  brutoLiq:   number;
+  totalGeral: number;
+  totalNotas: number;
+}
 
 export default function Dashboard() {
-  const [notas,    setNotas]    = useState<NotaFiscal[]>([]);
+  const { usuario } = useSession();
+  const [resumo,   setResumo]   = useState<Resumo | null>(null);
+  const [recentes, setRecentes] = useState<NotaFiscal[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [userName, setUserName] = useState('');
 
   useEffect(() => {
-    // Carregar dados em paralelo
     Promise.all([
-      fetch('/api/notas?por=200&ordenarPor=createdAt&ordem=desc').then(r => r.json()),
-      fetch('/api/auth/me').then(r => r.ok ? r.json() : null),
-    ]).then(([notas, me]) => {
-      setNotas(notas.notas || []);
-      if (me?.usuario?.nome) {
-        setUserName(me.usuario.nome.split(' ')[0]);
-      }
+      fetch('/api/notas/resumo').then(r => r.ok ? r.json() : null),
+      fetch('/api/notas?por=5&ordenarPor=createdAt&ordem=desc').then(r => r.json()),
+    ]).then(([res, notas]) => {
+      setResumo(res);
+      setRecentes(notas.notas || []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
 
-  // Notas do mês atual — usa dataEmissao se disponível, senão createdAt
-  const now = new Date();
-  const notasMes = notas.filter(n => {
-    const rawDate = n.dataEmissao || n.createdAt;
-    if (!rawDate) return false;
-    const d = new Date(rawDate);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  });
-
-  const brutoBruto  = notasMes.reduce((s, n) => s + (n.valorBruto  ?? 0), 0);
-  const brutoliq    = notasMes.reduce((s, n) => s + (n.valorLiquido ?? 0), 0);
-  const totalGeral  = notas.reduce((s, n) => s + (n.valorBruto ?? 0), 0);
-
-  const recentes = notas.slice(0, 5);
+  const now       = new Date();
+  const userName  = usuario?.nome?.split(' ')[0] ?? '';
 
   if (loading) {
     return (
@@ -77,15 +72,15 @@ export default function Dashboard() {
         </p>
         <div className="grid grid-cols-3 gap-3">
           <div className="card p-3 sm:p-4 text-center">
-            <p className="text-xl sm:text-2xl font-bold text-gray-900">{notasMes.length}</p>
+            <p className="text-xl sm:text-2xl font-bold text-gray-900">{resumo?.countMes ?? 0}</p>
             <p className="text-xs text-gray-400 mt-1 font-medium">Notas</p>
           </div>
           <div className="card p-3 sm:p-4 text-center">
-            <p className="text-sm sm:text-lg font-bold text-gray-900 leading-tight tabular-nums">{formatarMoeda(brutoBruto)}</p>
+            <p className="text-sm sm:text-lg font-bold text-gray-900 leading-tight tabular-nums">{formatarMoeda(resumo?.brutoBruto ?? 0)}</p>
             <p className="text-xs text-gray-400 mt-1 font-medium">Bruto</p>
           </div>
           <div className="card p-3 sm:p-4 text-center">
-            <p className="text-sm sm:text-lg font-bold text-green-700 leading-tight tabular-nums">{formatarMoeda(brutoliq)}</p>
+            <p className="text-sm sm:text-lg font-bold text-green-700 leading-tight tabular-nums">{formatarMoeda(resumo?.brutoLiq ?? 0)}</p>
             <p className="text-xs text-gray-400 mt-1 font-medium">Líquido</p>
           </div>
         </div>
@@ -163,14 +158,14 @@ export default function Dashboard() {
       </div>
 
       {/* ── Total geral ── */}
-      {notas.length > 0 && (
+      {(resumo?.totalNotas ?? 0) > 0 && (
         <div className="card p-5 flex items-center gap-4 bg-gradient-to-r from-blue-600 to-blue-700 border-0">
           <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
             <DollarSign size={22} className="text-white" />
           </div>
           <div>
             <p className="text-blue-100 text-sm font-medium">Total geral em notas</p>
-            <p className="text-white text-2xl font-bold">{formatarMoeda(totalGeral)}</p>
+            <p className="text-white text-2xl font-bold">{formatarMoeda(resumo?.totalGeral ?? 0)}</p>
           </div>
         </div>
       )}

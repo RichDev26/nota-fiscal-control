@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import Sidebar    from './Sidebar';
 import MobileNav  from './MobileNav';
+import { SessionProvider } from '@/context/SessionContext';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -14,7 +15,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <>
+    <SessionProvider>
       <div className="flex h-dvh overflow-hidden bg-[#F4F6FB]">
         <Sidebar />
         <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
@@ -22,6 +23,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
       <MobileNav />
-    </>
+    </SessionProvider>
   );
 }

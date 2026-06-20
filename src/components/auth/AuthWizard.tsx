@@ -178,9 +178,10 @@ export default function AuthWizard() {
   const [form,        setForm]        = useState<Form>({
     email: '', senha: '', confirmar: '', nome: '', lembrarMe: true,
   });
-  const [showPwd,     setShowPwd]     = useState(false);
-  const [showPwd2,    setShowPwd2]    = useState(false);
-  const [error,       setError]       = useState('');
+  const [showPwd,       setShowPwd]       = useState(false);
+  const [showPwd2,      setShowPwd2]      = useState(false);
+  const [esqueciSenha,  setEsqueciSenha]  = useState(false);
+  const [error,         setError]         = useState('');
   const [loading,     setLoading]     = useState(false);
   const [animKey,     setAnimKey]     = useState(0);
 
@@ -292,6 +293,16 @@ export default function AuthWizard() {
     advance();
   }
 
+  function handleRegBack() {
+    setError('');
+    if (regStep > 1) {
+      setRegStep(s => (s - 1) as RegStep);
+      advance();
+    } else {
+      goWelcome();
+    }
+  }
+
   // ── SENHA FORÇA ────────────────────────────────────────────────────────────
 
   const strength = passwordStrength(form.senha);
@@ -391,42 +402,69 @@ export default function AuthWizard() {
 
                   {loginStep === 2 && (
                     <>
-                      <StepInput
-                        label="Senha"
-                        type={showPwd ? 'text' : 'password'}
-                        value={form.senha}
-                        onChange={v => set('senha', v)}
-                        onEnter={handleLoginNext}
-                        placeholder="••••••••"
-                        error={error}
-                        inputRef={inputRef}
-                        suffix={
+                      {esqueciSenha ? (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-2">
+                          <p className="font-semibold">Redefinição de senha</p>
+                          <p>
+                            Para redefinir sua senha, entre em contato com o suporte informando
+                            o e-mail cadastrado: <span className="font-medium">{form.email}</span>
+                          </p>
+                          <button
+                            onClick={() => setEsqueciSenha(false)}
+                            className="text-blue-600 font-semibold hover:underline text-xs mt-1"
+                          >
+                            Voltar para o login
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <StepInput
+                            label="Senha"
+                            type={showPwd ? 'text' : 'password'}
+                            value={form.senha}
+                            onChange={v => set('senha', v)}
+                            onEnter={handleLoginNext}
+                            placeholder="••••••••"
+                            error={error}
+                            inputRef={inputRef}
+                            suffix={
+                              <button
+                                type="button"
+                                onClick={() => setShowPwd(p => !p)}
+                                className="text-gray-400 hover:text-gray-600"
+                                tabIndex={-1}
+                              >
+                                {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                              </button>
+                            }
+                          />
+                          <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={form.lembrarMe}
+                              onChange={e => set('lembrarMe', e.target.checked)}
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600"
+                            />
+                            <span className="text-sm text-gray-600">Lembrar de mim por 30 dias</span>
+                          </label>
                           <button
                             type="button"
-                            onClick={() => setShowPwd(p => !p)}
-                            className="text-gray-400 hover:text-gray-600"
-                            tabIndex={-1}
+                            onClick={() => setEsqueciSenha(true)}
+                            className="mt-3 text-xs text-gray-400 hover:text-blue-600 transition-colors"
                           >
-                            {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                            Esqueci minha senha
                           </button>
-                        }
-                      />
-                      <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={form.lembrarMe}
-                          onChange={e => set('lembrarMe', e.target.checked)}
-                          className="w-4 h-4 rounded border-gray-300 text-blue-600"
-                        />
-                        <span className="text-sm text-gray-600">Lembrar de mim por 30 dias</span>
-                      </label>
+                        </>
+                      )}
                     </>
                   )}
 
-                  <Btn onClick={handleLoginNext} loading={loading}>
-                    {loginStep === 1 ? 'Avançar' : 'Entrar'}
-                    {!loading && <ArrowRight size={16} />}
-                  </Btn>
+                  {!esqueciSenha && (
+                    <Btn onClick={handleLoginNext} loading={loading}>
+                      {loginStep === 1 ? 'Avançar' : 'Entrar'}
+                      {!loading && <ArrowRight size={16} />}
+                    </Btn>
+                  )}
 
                   <ProgressDots total={2} current={loginStep - 1} />
                 </div>
@@ -436,7 +474,7 @@ export default function AuthWizard() {
               {mode === 'register' && (
                 <div>
                   <button
-                    onClick={goWelcome}
+                    onClick={handleRegBack}
                     className="flex items-center gap-1.5 text-sm text-gray-400
                       hover:text-gray-600 transition-colors mb-6"
                   >

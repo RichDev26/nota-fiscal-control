@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,9 @@ function sanitizeUpdate(raw: Record<string, unknown>): Record<string, unknown> {
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
     const nota = await prisma.notaFiscal.findUnique({
       where: { id: params.id },
@@ -61,6 +65,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     });
 
     if (!nota) return NextResponse.json({ error: 'Nota não encontrada' }, { status: 404 });
+    if (nota.usuarioId && nota.usuarioId !== session.sub)
+      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
 
     // Não trafegar pdfData (base64 pode ser vários MB)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -74,6 +80,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 // ── PUT ───────────────────────────────────────────────────────────────────────
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
     const body = await req.json();
     const {
@@ -94,6 +103,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     const notaAtual = await prisma.notaFiscal.findUnique({ where: { id: params.id } });
     if (!notaAtual) return NextResponse.json({ error: 'Nota não encontrada' }, { status: 404 });
+    if (notaAtual.usuarioId && notaAtual.usuarioId !== session.sub)
+      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
 
     // ── Upsert Prestador
     let prestadorId = notaAtual.prestadorId;
@@ -136,7 +147,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           campoAlterado: field,
           valorAntigo: oldVal,
           valorNovo: newVal,
-          usuario: 'Sistema',
+          usuario: session.nome,
         });
       }
     }
@@ -180,7 +191,15 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
+    const nota = await prisma.notaFiscal.findUnique({ where: { id: params.id }, select: { usuarioId: true } });
+    if (!nota) return NextResponse.json({ error: 'Nota não encontrada' }, { status: 404 });
+    if (nota.usuarioId && nota.usuarioId !== session.sub)
+      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+
     await prisma.notaFiscal.delete({ where: { id: params.id } });
     return NextResponse.json({ ok: true });
   } catch (err) {

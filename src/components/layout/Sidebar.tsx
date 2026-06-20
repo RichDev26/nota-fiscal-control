@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, FileText, BarChart2, Receipt, Settings, LogOut } from 'lucide-react';
+import { useSession } from '@/context/SessionContext';
 
 const links = [
   { href: '/',           label: 'Dashboard',  icon: LayoutDashboard },
@@ -15,13 +15,7 @@ const links = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router   = useRouter();
-  const [usuario, setUsuario] = useState<{ nome: string; email: string } | null>(null);
-
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d?.usuario && setUsuario(d.usuario));
-  }, []);
+  const { usuario } = useSession();
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -84,10 +78,14 @@ export default function Sidebar() {
       <div className="px-3 py-3 border-t border-gray-50 space-y-1">
 
         {/* Configurações */}
-        <button className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-semibold text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-all">
+        <Link href="/configuracoes" className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+          pathname === '/configuracoes'
+            ? 'bg-blue-50 text-blue-700'
+            : 'text-gray-400 hover:bg-gray-50 hover:text-gray-700'
+        }`}>
           <Settings size={16} />
           <span>Configurações</span>
-        </button>
+        </Link>
 
         {/* Perfil do usuário */}
         {usuario && (
