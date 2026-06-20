@@ -286,16 +286,43 @@ function extractIBPT(segs: string[]): IBPTInfo {
 /**
  * R001 — Alíquota ISS dentro do intervalo legal (LC 116/2003)
  *   Mínimo: 2% (Art. 8-A) | Máximo: 5% (Art. 8, §1)
+ *   Exceções tratadas:
+ *   - 0%: válido quando há isenção, exportação ou imunidade declarada
+ *   - 1-2%: aviso (possível alíquota municipal reduzida autorizada)
  */
-function validarAliquotaISS(aliquota: string | null): RegraFiscal {
+function validarAliquotaISS(
+  aliquota:          string | null,
+  situacaoISSQN?:    string | null,
+  naturezaOperacao?: string | null,
+): RegraFiscal {
   const cod = 'R001';
   const desc = `Alíquota ISS dentro do intervalo legal [${ISS_ALIQ_MIN}%–${ISS_ALIQ_MAX}%] (LC 116/2003)`;
   if (!aliquota) return reprovado(cod, desc, 'MEDIO', 'alíquota ISS não extraída');
 
   const pct = brToFloat(aliquota);
+
+  // 3.4 — ISS 0%: válido quando há justificativa legal declarada
+  if (pct === 0) {
+    const contexto = [situacaoISSQN ?? '', naturezaOperacao ?? ''].join(' ');
+    const temJustificativa = /expor|isent|imun|suspens/i.test(contexto);
+    if (temJustificativa) {
+      return aprovado(cod, desc, 'CRITICO',
+        `ISS 0% com justificativa legal declarada: "${situacaoISSQN || naturezaOperacao || 'N/A'}"`);
+    }
+    return aviso(cod, desc,
+      `ISS 0% sem justificativa de isenção/exportação/imunidade declarada — verificar fundamento legal`);
+  }
+
+  // 3.5 — ISS entre 1% e 2%: aviso (possível alíquota municipal reduzida)
+  if (pct >= 1 && pct < ISS_ALIQ_MIN) {
+    return aviso(cod, desc,
+      `${aliquota}% abaixo do mínimo geral de ${ISS_ALIQ_MIN}% (LC 116/2003 Art. 8-A) — verificar se município possui alíquota reduzida autorizada`);
+  }
+
   if (pct >= ISS_ALIQ_MIN && pct <= ISS_ALIQ_MAX) {
     return aprovado(cod, desc, 'CRITICO', `${aliquota}% — dentro do intervalo legal`);
   }
+
   return reprovado(cod, desc, 'CRITICO',
     `${aliquota}% fora do intervalo [${ISS_ALIQ_MIN}%–${ISS_ALIQ_MAX}%] — revisar alíquota municipal`);
 }
@@ -677,7 +704,7 @@ export async function analyzeTributario(
   // ── Aplicação das regras fiscais ───────────────────────────────────────────
   const regras: RegraFiscal[] = [
     // ISS
-    validarAliquotaISS(valores.aliquota_iss),
+    validarAliquotaISS(valores.aliquota_iss, classificacao.situacao_issqn, classificacao.natureza_operacao),
     validarCalculoISS(valores.base_calculo, valores.aliquota_iss, valores.valor_iss),
     validarBalancoISS(valores.valor_bruto, valores.valor_iss, valores.valor_liquido, totalFederais),
     validarSituacaoISS(classificacao.situacao_issqn, classificacao.situacao_nfse, classificacao.iss_retido),

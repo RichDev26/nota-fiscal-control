@@ -284,8 +284,6 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   const raw = (await pdfParse(buffer)).text ?? '';
   const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').normalize('NFC');
 
-  console.log('[PDF] Regex — texto (0-600):\n' + text.slice(0, 600));
-  console.log('[PDF] Regex — texto (600-1200):\n' + text.slice(600, 1200));
 
   const result: PdfExtractResult = {};
   const V = '([\\d.]+,[\\d]{2})';          // valor BR: 50.000,00
@@ -438,7 +436,6 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   //   aparecem misturados antes dos headers — usa posições de "Endereço:".
 
   const enderecoIdxs = Array.from(text.matchAll(/Endere[çc]o\s*:/gi)).map(m => m.index!);
-  console.log('[PDF] enderecoIdxs:', enderecoIdxs, '| pStart:', pStart, '| tStart:', tStart, '| dStart:', dStart);
 
   let pBlock: string;
   let tBlock: string;
@@ -489,7 +486,6 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
     .map(m => ({ cnpj: m[1], idx: m.index! }));
   const allDocPos = [...allCnpjsPos, ...allCpfsPos].sort((a, b) => a.idx - b.idx);
 
-  console.log('[PDF] Documentos encontrados:', allDocPos.map(d => `${d.cnpj}@${d.idx}`));
 
   if (!result.prestador?.cpfCnpj) {
     // Procura CNPJ dentro do bloco prestador
@@ -718,7 +714,7 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
       const ret = (result.valorIss ?? 0) + (result.ir ?? 0) + (result.pisPasep ?? 0)
         + (result.cofins ?? 0) + (result.inss ?? 0) + (result.csll ?? 0) + (result.outrasRetencoes ?? 0);
       const expected = result.valorBruto - ret;
-      if (Math.abs(expected - result.valorLiquido) > 1)
+      if (Math.abs(expected - result.valorLiquido) > Math.max(1, (result.valorBruto ?? 0) * 0.001))
         issues.push(`Valor líquido calculado: R$ ${expected.toFixed(2)}, no PDF: R$ ${result.valorLiquido.toFixed(2)}`);
     }
     return issues;
@@ -731,16 +727,6 @@ async function extractWithRegex(buffer: Buffer): Promise<PdfExtractResult> {
   if (result.valorBruto) ps.push(`R$ ${result.valorBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
   result.resumo = ps.join(' | ');
 
-  console.log('[PDF] Regex resultado:', JSON.stringify({
-    numeroNf: result.numeroNf, codigoVerificacao: result.codigoVerificacao,
-    dataEmissao: result.dataEmissao, valorBruto: result.valorBruto,
-    valorLiquido: result.valorLiquido, baseCalculo: result.baseCalculo,
-    aliquota: result.aliquota, valorIss: result.valorIss,
-    of: result.of, descricao: result.descricao?.slice(0, 80),
-    prestador: { razao: result.prestador?.nomeRazaoSocial, cnpj: result.prestador?.cpfCnpj, email: result.prestador?.email, tel: result.prestador?.telefone },
-    tomador:   { razao: result.tomador?.nomeRazaoSocial,   cnpj: result.tomador?.cpfCnpj },
-    camposFaltando: result.camposNaoEncontrados,
-  }, null, 2));
 
   return result;
 }
@@ -829,6 +815,8 @@ function mapParsedToResult(p: Record<string, unknown>): PdfExtractResult {
   return result;
 }
 
+const TIMEOUT_IA_MS = 45_000;
+
 async function tryModels(
   client: { messages: { create: (p: object) => Promise<{ content: Array<{ type: string; text?: string }> }> } },
   models: string[],
@@ -838,13 +826,15 @@ async function tryModels(
   let lastErr: Error | null = null;
   for (const model of models) {
     try {
-      console.log(`[PDF] ${label} — modelo: ${model}`);
-      const resp = await client.messages.create(buildReq(model));
+      const timeoutP = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout IA após ${TIMEOUT_IA_MS / 1000}s`)), TIMEOUT_IA_MS),
+      );
+      const resp = await Promise.race([client.messages.create(buildReq(model)), timeoutP]);
       const txt = resp.content[0]?.type === 'text' ? (resp.content[0] as { type: string; text: string }).text.trim() : '';
-      if (txt) { console.log(`[PDF] ${label} OK`); return txt; }
+      if (txt) return txt;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.log(`[PDF] ${label} ${model} falhou: ${msg.slice(0, 120)}`);
+      console.error(`[PDF] ${label} ${model} falhou: ${msg.slice(0, 120)}`);
       lastErr = err instanceof Error ? err : new Error(msg);
     }
   }

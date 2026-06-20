@@ -5,6 +5,10 @@
  * Orquestra validateCrossCheck (Fase 9) e mapeia ValidacaoCruzadaResult
  * para PdfExtractResult — o contrato esperado pelo route.ts e pelo banco.
  *
+ * Validações adicionais (Partes 2-3):
+ *   - Nota cancelada → lança NotaCanceladaError (route.ts retorna 422)
+ *   - CNPJ/CPF → dígito verificador; inválidos adicionados a camposBaixaConfianca
+ *
  * Fallback automático: se qualquer fase lançar erro, o motor legado
  * (pdf-extractor.ts) é chamado e o resultado é marcado com 'fallback-legado'.
  */
@@ -13,11 +17,21 @@ import type { PdfExtractResult } from '@/types';
 import { validateCrossCheck } from './validacao-cruzada';
 import type { ValidacaoCruzadaResult } from './validacao-cruzada';
 import { logInfo, logError, logNegocio } from './logger';
+import { validarDocumento } from '@/lib/validators/documento-fiscal';
 
 const VERSAO_INTEGRADOR = '1.0.0';
 
 // Campos cujo valor abaixo deste limiar de confiança geram alerta
 const LIMIAR_BAIXA_CONFIANCA = 60;
+
+// ─── ERRO ESPECIAL: NOTA CANCELADA ────────────────────────────────────────────
+
+export class NotaCanceladaError extends Error {
+  constructor(public readonly situacao: string) {
+    super(`Nota fiscal cancelada ("${situacao}") — não importada. Importe a nota substituta.`);
+    this.name = 'NotaCanceladaError';
+  }
+}
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -148,7 +162,6 @@ function mapearResultado(cruzado: ValidacaoCruzadaResult): PdfExtractResult {
     inconsistencias:         alertas.length > 0 ? alertas : undefined,
     fontesExtracao:          ['fase-9-dupla-extracao'],
     resumo,
-    // Metadados de qualidade (não salvos no banco — apenas para exibição)
     _meta: {
       confianca_global,
       taxa_concordancia,
@@ -160,12 +173,44 @@ function mapearResultado(cruzado: ValidacaoCruzadaResult): PdfExtractResult {
   } as PdfExtractResult & { _meta: unknown };
 }
 
+// ─── VALIDAÇÃO PÓS-EXTRAÇÃO ───────────────────────────────────────────────────
+
+/** 3.2 — Bloqueia nota cancelada antes de salvar no banco */
+function verificarNotaCancelada(resultado: PdfExtractResult): void {
+  const situacao = resultado.situacaoNfse;
+  if (situacao && /cancelad/i.test(situacao)) {
+    throw new NotaCanceladaError(situacao);
+  }
+}
+
+/** 3.1 — Valida dígito verificador de CNPJ/CPF; adiciona alertas se inválido */
+function validarDocumentosFiscais(resultado: PdfExtractResult): PdfExtractResult {
+  const alertas: string[] = [];
+  const camposBaixos = [...(resultado.camposBaixaConfianca ?? [])];
+
+  const checar = (doc: string | null | undefined, label: string, campo: string) => {
+    if (!doc) return;
+    const { valido, tipo } = validarDocumento(doc);
+    if (!valido) {
+      alertas.push(`${tipo} do ${label} com dígito verificador inválido: ${doc} — provável erro de OCR`);
+      if (!camposBaixos.includes(campo)) camposBaixos.push(campo);
+    }
+  };
+
+  checar(resultado.prestador?.cpfCnpj, 'Prestador', 'prestador.cpf_cnpj');
+  checar(resultado.tomador?.cpfCnpj,   'Tomador',   'tomador.cpf_cnpj');
+
+  if (alertas.length === 0) return resultado;
+
+  return {
+    ...resultado,
+    camposBaixaConfianca: camposBaixos,
+    inconsistencias: [...(resultado.inconsistencias ?? []), ...alertas],
+  };
+}
+
 // ─── PONTO DE ENTRADA PÚBLICO ─────────────────────────────────────────────────
 
-/**
- * Substitui extractFromPdfBuffer do motor legado.
- * Mantém a mesma assinatura para que route.ts não precise de outras alterações.
- */
 export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractResult> {
   const t0 = Date.now();
 
@@ -173,7 +218,11 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
     logInfo('integrador', 'Iniciando extração — motor Fases 1-11');
 
     const cruzado   = await validateCrossCheck(buffer);
-    const resultado = mapearResultado(cruzado);
+    let resultado   = mapearResultado(cruzado);
+
+    // Validações pós-extração (bloqueiam antes de retornar ao route.ts)
+    verificarNotaCancelada(resultado);
+    resultado = validarDocumentosFiscais(resultado);
 
     logInfo('integrador', 'Extração concluída com sucesso', {
       total_campos:        cruzado.estatisticas.total_campos,
@@ -194,6 +243,9 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
     return resultado;
 
   } catch (err) {
+    // NotaCanceladaError propaga sem fallback — é dado de negócio, não falha técnica
+    if (err instanceof NotaCanceladaError) throw err;
+
     logError(
       'integrador',
       'Falha no motor Fases 1-11 — ativando fallback para motor legado',
@@ -204,10 +256,14 @@ export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractRe
     const { extractFromPdfBuffer: legado } = await import('../pdf-extractor');
     const resultadoLegado = await legado(buffer);
 
+    // Aplica validações também no resultado do motor legado
+    verificarNotaCancelada(resultadoLegado);
+    const comValidacao = validarDocumentosFiscais(resultadoLegado);
+
     return {
-      ...resultadoLegado,
-      fontesExtracao: [...(resultadoLegado.fontesExtracao ?? []), 'fallback-legado'],
-      resumo: [resultadoLegado.resumo, 'FALLBACK: motor legado (Fases 1-11 falharam)']
+      ...comValidacao,
+      fontesExtracao: [...(comValidacao.fontesExtracao ?? []), 'fallback-legado'],
+      resumo: [comValidacao.resumo, 'FALLBACK: motor legado (Fases 1-11 falharam)']
         .filter(Boolean)
         .join(' | '),
     };
