@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { movePdf } from '@/lib/pdf-storage';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
     const { searchParams } = new URL(req.url);
     const busca = searchParams.get('busca') || '';
@@ -16,7 +20,7 @@ export async function GET(req: NextRequest) {
     const ordenarPor = searchParams.get('ordenarPor') || 'createdAt';
     const ordem = (searchParams.get('ordem') || 'desc') as 'asc' | 'desc';
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { usuarioId: session.sub };
 
     if (status) where.status = status;
 
@@ -78,6 +82,9 @@ const NOTA_FIELDS = new Set([
 ]);
 
 export async function POST(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
     const body = await req.json();
     const { prestador: prestadorData, tomador: tomadorData, ...rawData } = body;
@@ -171,6 +178,7 @@ export async function POST(req: NextRequest) {
         dataRecebimento: parseDate(notaData.dataRecebimento),
         prestadorId: resolvedPrestadorId,
         tomadorId:   tomadorId || (str(notaData.tomadorId) ?? undefined),
+        usuarioId:   session.sub,
       },
       include: { prestador: true, tomador: true },
     });

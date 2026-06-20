@@ -79,6 +79,7 @@ model NotaFiscal {
   prestadorId                   String?
   tomadorId                     String?
   notaSubstitutivaId            String?
+  usuarioId                     String?
 
   prestador         PessoaFiscal?        @relation("Prestador", fields: [prestadorId], references: [id])
   tomador           PessoaFiscal?        @relation("Tomador", fields: [tomadorId], references: [id])
@@ -86,6 +87,7 @@ model NotaFiscal {
   notasSubstituidas NotaFiscal[]         @relation("Substituicao")
   impostos          Imposto[]
   historico         HistoricoAlteracao[]
+  usuario           Usuario?             @relation(fields: [usuarioId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -101,7 +103,9 @@ model Imposto {
   status         String      @default("pendente")
   observacao     String?
   notaFiscalId   String?
+  usuarioId      String?
   notaFiscal     NotaFiscal? @relation(fields: [notaFiscalId], references: [id])
+  usuario        Usuario?    @relation(fields: [usuarioId], references: [id])
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 }
@@ -215,10 +219,12 @@ model LogSistema {
 // ─── Autenticação ─────────────────────────────────────────────────────────────
 
 model Usuario {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String       @id @default(cuid())
+  email        String       @unique
   senhaHash    String
   nome         String
-  criadoEm    DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  criadoEm    DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
+  notas        NotaFiscal[]
+  impostos     Imposto[]
 }

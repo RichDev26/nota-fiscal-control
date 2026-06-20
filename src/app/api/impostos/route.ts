@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status') || '';
     const mesReferencia = searchParams.get('mesReferencia') || '';
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { usuarioId: session.sub };
     if (status) where.status = status;
     if (mesReferencia) where.mesReferencia = { contains: mesReferencia };
 
@@ -27,6 +31,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   try {
     const body = await req.json();
     const parseDate = (d: string | null | undefined) => (d ? new Date(d) : null);
@@ -35,7 +42,8 @@ export async function POST(req: NextRequest) {
       data: {
         ...body,
         dataVencimento: parseDate(body.dataVencimento),
-        dataPagamento: parseDate(body.dataPagamento),
+        dataPagamento:  parseDate(body.dataPagamento),
+        usuarioId:      session.sub,
       },
       include: { notaFiscal: { select: { id: true, numeroNf: true, nomeOrganizador: true } } },
     });
