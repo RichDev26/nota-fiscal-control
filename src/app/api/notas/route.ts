@@ -135,7 +135,12 @@ export async function POST(req: NextRequest) {
 
     // Parse dates — notaData is Record<string, unknown>, cast para string
     const str = (v: unknown) => (v && typeof v === 'string' ? v : null);
-    const parseDate = (v: unknown) => { const d = str(v); return d ? new Date(d) : null; };
+    const parseDate = (v: unknown) => {
+      const d = str(v);
+      if (!d) return null;
+      const dt = new Date(d);
+      return isNaN(dt.getTime()) ? null : dt;
+    };
 
     // 5.4 — Verificar duplicidade ANTES de criar (numeroNf + prestador + dataEmissao)
     const resolvedPrestadorId = prestadorId || (str(notaData.prestadorId) ?? undefined);
