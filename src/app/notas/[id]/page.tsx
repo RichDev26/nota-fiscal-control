@@ -11,6 +11,7 @@ import {
 import { formatarMoeda, formatarData } from '@/lib/validators';
 import { STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { NotaFiscal } from '@/types';
+import { AnteciparModal, SuccessOverlay } from '@/components/notas/AnteciparModal';
 
 type FormData = Record<string, string | number | null>;
 const STATUS_OPTIONS = ['rascunho', 'lancada', 'recebida', 'antecipada', 'incompleta', 'invalida', 'substitutiva', 'substituida', 'cancelada'];
@@ -86,7 +87,9 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
   const [tomador, setTomador]     = useState<FormData>({});
   const [error, setError]    = useState('');
   const [toast, setToast]    = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-  const [showFiscal, setShowFiscal] = useState(false);
+  const [showFiscal, setShowFiscal]       = useState(false);
+  const [anteciparNota, setAnteciparNota] = useState<NotaFiscal | null>(null);
+  const [showSuccess, setShowSuccess]     = useState(false);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
 
@@ -183,6 +186,14 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
     else showToast('Erro ao duplicar.', 'error');
   };
 
+  const handleAnteciparSuccess = async () => {
+    setAnteciparNota(null);
+    setShowSuccess(true);
+    const res = await fetch(`/api/notas/${params.id}`);
+    const data = await res.json();
+    if (res.ok) setNota(data);
+  };
+
   const sf  = (k: string, v: string) => setForm(p => ({ ...p, [k]: v || null }));
   const sp2 = (k: string, v: string) => setPrestador(p => ({ ...p, [k]: v || null }));
   const st  = (k: string, v: string) => setTomador(p => ({ ...p, [k]: v || null }));
@@ -209,6 +220,14 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
     return (
       <div className="flex h-full">
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+        {showSuccess && <SuccessOverlay onDone={() => setShowSuccess(false)} />}
+        {anteciparNota && (
+          <AnteciparModal
+            nota={anteciparNota}
+            onClose={() => setAnteciparNota(null)}
+            onSuccess={handleAnteciparSuccess}
+          />
+        )}
 
         {/* ── Left column ─── */}
         <div className={`space-y-4 p-5 md:p-7 overflow-y-auto ${hasPdf ? 'w-full xl:w-[620px] xl:shrink-0' : 'flex-1'} max-w-2xl mx-auto xl:mx-0 xl:max-w-none`}>
@@ -247,7 +266,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
                 </a>
               )}
               {nota.status !== 'antecipada' && (nota.valorLiquido ?? 0) > 0 && (
-                <button onClick={() => handleQuickStatus('antecipada')} className="btn-amber btn-sm flex-1 justify-center">
+                <button onClick={() => setAnteciparNota(nota)} className="btn-amber btn-sm flex-1 justify-center">
                   <Zap size={13} /> Antecipar
                 </button>
               )}
