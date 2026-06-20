@@ -18,10 +18,14 @@ export async function GET(req: NextRequest) {
     const where: Record<string, unknown> = { usuarioId: session.sub };
 
     if (dataInicio || dataFim) {
-      where.dataEmissao = {
-        ...(dataInicio ? { gte: new Date(dataInicio) } : {}),
-        ...(dataFim ? { lte: new Date(dataFim + 'T23:59:59') } : {}),
-      };
+      const dateFilter: Record<string, Date> = {};
+      if (dataInicio) dateFilter.gte = new Date(dataInicio);
+      if (dataFim)    dateFilter.lte = new Date(dataFim + 'T23:59:59');
+      // inclui notas com dataEmissao no período E notas sem data (usa createdAt)
+      where.OR = [
+        { dataEmissao: dateFilter },
+        { dataEmissao: null, createdAt: dateFilter },
+      ];
     }
 
     if (status) where.status = status;
@@ -29,7 +33,7 @@ export async function GET(req: NextRequest) {
     const notas = await prisma.notaFiscal.findMany({
       where,
       include: { prestador: true, tomador: true },
-      orderBy: { dataEmissao: 'asc' },
+      orderBy: { createdAt: 'asc' },
     });
 
     // Calcular resumo
@@ -57,8 +61,9 @@ export async function GET(req: NextRequest) {
 
     const porMesMap: Record<string, { total: number; quantidade: number }> = {};
     for (const n of notas) {
-      if (n.dataEmissao) {
-        const d = new Date(n.dataEmissao);
+      const rawDate = n.dataEmissao || n.createdAt;
+      if (rawDate) {
+        const d = new Date(rawDate);
         const mes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!porMesMap[mes]) porMesMap[mes] = { total: 0, quantidade: 0 };
         porMesMap[mes].total += n.valorBruto || 0;
