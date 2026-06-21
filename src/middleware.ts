@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest, signToken, setSessionCookie, COOKIE_NAME } from '@/lib/auth';
 
 // Rotas que não exigem autenticação
-const PUBLIC_PAGE_PREFIXES = ['/auth'];
+const PUBLIC_PAGE_PREFIXES = ['/auth', '/landing'];
 const PUBLIC_API_PREFIXES  = ['/api/auth/'];
 
 function isPublic(pathname: string): boolean {
