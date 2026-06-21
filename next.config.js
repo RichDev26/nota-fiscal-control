@@ -1,3 +1,5 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Next.js 14: pacotes server-only (não bundlados pelo webpack)
@@ -6,6 +8,13 @@ const nextConfig = {
   },
 
   webpack: (config, { isServer }) => {
+    // Garante resolução do alias @/ em ambientes Linux (Railway) onde o
+    // tsconfig moduleResolution:"bundler" pode não configurar aliases webpack automaticamente
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.resolve(__dirname, 'src'),
+    };
+
     if (isServer) {
       // Garante que esses pacotes nunca entram no bundle do servidor via webpack.
       // Usa abordagem defensiva para suportar diferentes estruturas de config.externals.
