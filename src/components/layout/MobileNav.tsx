@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { LayoutDashboard, FileText, BarChart2, Receipt, PlusCircle, Settings } from 'lucide-react';
 
 const links = [
-  { href: '/',              label: 'Início',     icon: LayoutDashboard },
+  { href: '/painel',        label: 'Início',     icon: LayoutDashboard },
   { href: '/notas',         label: 'Notas',      icon: FileText },
   { href: '/notas/nova',    label: 'Nova',       icon: PlusCircle, highlight: true },
   { href: '/impostos',      label: 'Impostos',   icon: Receipt },
@@ -19,9 +19,7 @@ export default function MobileNav() {
     <nav className="fixed bottom-0 inset-x-0 z-50 bg-white border-t border-gray-100 flex md:hidden safe-bottom"
          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {links.map(({ href, label, icon: Icon, highlight }) => {
-        const active = href === '/'
-          ? pathname === '/'
-          : pathname === href || pathname.startsWith(href + '/');
+        const active = pathname === href || pathname.startsWith(href + '/');
 
         if (highlight) {
           return (

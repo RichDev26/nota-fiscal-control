@@ -6,7 +6,7 @@ import { LayoutDashboard, FileText, BarChart2, Receipt, Settings, LogOut } from 
 import { useSession } from '@/context/SessionContext';
 
 const links = [
-  { href: '/',           label: 'Dashboard',  icon: LayoutDashboard },
+  { href: '/painel',     label: 'Dashboard',  icon: LayoutDashboard },
   { href: '/notas',      label: 'Notas',       icon: FileText },
   { href: '/relatorios', label: 'Relatórios',  icon: BarChart2 },
   { href: '/impostos',   label: 'Impostos',    icon: Receipt },
@@ -50,10 +50,7 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 px-3 py-2 space-y-0.5">
         {links.map(({ href, label, icon: Icon }) => {
-          const active =
-            href === '/'
-              ? pathname === '/'
-              : pathname === href || pathname.startsWith(href + '/');
+          const active = pathname === href || pathname.startsWith(href + '/');
           return (
             <Link
               key={href}

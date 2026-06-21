@@ -7,10 +7,10 @@ import { SessionProvider } from '@/context/SessionContext';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isAuthRoute = pathname.startsWith('/auth');
+  const isPublicRoute = pathname.startsWith('/auth') || pathname === '/';
 
-  // Rotas de autenticação: sem sidebar nem nav — tela cheia para o wizard
-  if (isAuthRoute) {
+  // Rotas públicas (landing + auth): sem sidebar nem nav
+  if (isPublicRoute) {
     return <>{children}</>;
   }
 

@@ -1,0 +1,146 @@
+{
+  "versao": "1.0.1",
+  "timestamp_criacao": "2026-06-19T06:24:12.969Z",
+  "timestamp_atualizacao": "2026-06-19T06:24:12.977Z",
+  "total_correcoes_processadas": 7,
+  "campos_congelados": [],
+  "metricas": {
+    "total_aceitas": 7,
+    "total_rejeitadas": 1,
+    "total_congeladas": 0,
+    "padroes_promovidos": 0,
+    "reversoes": 0
+  },
+  "ancoras": {
+    "tomador.razao_social": {
+      "campo": "tomador.razao_social",
+      "padrao_original": "primeiro_segmento_multiplas_palavras_zona_tomador",
+      "padroes_alternativos": [
+        "label_razao_social:",
+        "label_tomador_nome_b"
+      ],
+      "confianca_historica": 62,
+      "erros_registrados": 2,
+      "correcoes_validadas": 0,
+      "congelado": false,
+      "ultima_atualizacao": "2026-06-19T06:24:12.977Z",
+      "notas": "PDF 2 colunas: zona TOMADOR pode conter rótulos de cabeçalho antes da razão social"
+    },
+    "servico.descricao": {
+      "campo": "servico.descricao",
+      "padrao_original": "primeiro_texto_zona_discriminacao",
+      "padroes_alternativos": [
+        "apos_label_descricao_b"
+      ],
+      "confianca_historica": 80,
+      "erros_registrados": 1,
+      "correcoes_validadas": 1,
+      "congelado": false,
+      "ultima_atualizacao": "2026-06-19T06:24:12.969Z",
+      "notas": "Zona DISCRIMINAÇÃO pode iniciar com cabeçalhos de tabela (QtdValor unitário)"
+    }
+  },
+  "heuristicas": {
+    "tomador.telefone": {
+      "campo": "tomador.telefone",
+      "secao": "tomador",
+      "delta_confianca": -10,
+      "correcoes_validadas": 0,
+      "correcoes_rejeitadas": 0,
+      "padrao_erro_frequente": "captura_telefone_prestador_em_zona_tomador",
+      "nivel_aprendizado": "MEMORIA",
+      "ultima_atualizacao": "2026-06-19T06:24:12.969Z"
+    },
+    "valor_iss": {
+      "campo": "valor_iss",
+      "secao": "financeiro",
+      "delta_confianca": 5,
+      "correcoes_validadas": 0,
+      "correcoes_rejeitadas": 0,
+      "padrao_erro_frequente": null,
+      "nivel_aprendizado": "MEMORIA",
+      "ultima_atualizacao": "2026-06-19T06:24:12.977Z"
+    },
+    "servico.descricao": {
+      "campo": "servico.descricao",
+      "secao": "servicos",
+      "delta_confianca": 5,
+      "correcoes_validadas": 0,
+      "correcoes_rejeitadas": 0,
+      "padrao_erro_frequente": null,
+      "nivel_aprendizado": "MEMORIA",
+      "ultima_atualizacao": "2026-06-19T06:24:12.977Z"
+    },
+    "valor_aproximado_tributos": {
+      "campo": "valor_aproximado_tributos",
+      "secao": "financeiro",
+      "delta_confianca": 5,
+      "correcoes_validadas": 0,
+      "correcoes_rejeitadas": 0,
+      "padrao_erro_frequente": null,
+      "nivel_aprendizado": "MEMORIA",
+      "ultima_atualizacao": "2026-06-19T06:24:12.977Z"
+    },
+    "prestador.razao_social": {
+      "campo": "prestador.razao_social",
+      "secao": "prestador",
+      "delta_confianca": 5,
+      "correcoes_validadas": 0,
+      "correcoes_rejeitadas": 0,
+      "padrao_erro_frequente": null,
+      "nivel_aprendizado": "MEMORIA",
+      "ultima_atualizacao": "2026-06-19T06:24:12.977Z"
+    }
+  },
+  "fronteiras": {
+    "tomador": {
+      "secao": "tomador",
+      "ancora_inicio_alternativa": null,
+      "ancora_fim_alternativa": null,
+      "casos_erro": 1,
+      "casos_correcao": 0,
+      "congelado": false,
+      "ultima_atualizacao": "2026-06-19T06:24:12.969Z"
+    },
+    "servicos": {
+      "secao": "servicos",
+      "ancora_inicio_alternativa": null,
+      "ancora_fim_alternativa": null,
+      "casos_erro": 1,
+      "casos_correcao": 0,
+      "congelado": false,
+      "ultima_atualizacao": "2026-06-19T06:24:12.969Z"
+    }
+  },
+  "padroes_consolidados": [],
+  "historico_versoes": [
+    {
+      "versao": "1.0.0",
+      "timestamp": "2026-06-19T06:24:12.969Z",
+      "alteracoes": [
+        "Base inicial criada com conhecimento das Fases 2-9"
+      ],
+      "revertido": false,
+      "responsavel": "SISTEMA",
+      "hash_estado": "d10419a7"
+    },
+    {
+      "versao": "1.0.1",
+      "timestamp": "2026-06-19T06:24:12.977Z",
+      "alteracoes": [
+        "Nível 1: Correção registrada para \"tomador.razao_social\" (total validadas: 1)",
+        "Âncora \"tomador.razao_social\": confiança histórica reduzida para 62%",
+        "Nível 1: Correção registrada para \"tomador.telefone\" (total validadas: 1)",
+        "Confirmação \"servico.descricao\": delta_confianca 0 → 5",
+        "Âncora \"servico.descricao\": confiança histórica → 80%",
+        "Confirmação \"valor_aproximado_tributos\": delta_confianca 0 → 5",
+        "Confirmação \"prestador.razao_social\": delta_confianca 0 → 5",
+        "Confirmação \"valor_iss\": delta_confianca 0 → 5",
+        "Nível 1: Correção registrada para \"codigo_verificacao\" (total validadas: 1)"
+      ],
+      "revertido": false,
+      "responsavel": "SISTEMA",
+      "hash_estado": "3a9efcab"
+    }
+  ]
+}

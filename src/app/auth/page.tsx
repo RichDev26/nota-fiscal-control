@@ -8,6 +8,6 @@ export const metadata = {
 
 export default async function AuthPage() {
   const session = await getSession();
-  if (session) redirect('/');
+  if (session) redirect('/painel');
   return <AuthWizard />;
 }

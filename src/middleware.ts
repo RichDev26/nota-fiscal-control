@@ -13,9 +13,11 @@ import { getSessionFromRequest, signToken, setSessionCookie, COOKIE_NAME } from 
 
 // Rotas que não exigem autenticação
 const PUBLIC_PAGE_PREFIXES = ['/auth', '/landing'];
+const PUBLIC_PAGE_EXACT    = ['/'];
 const PUBLIC_API_PREFIXES  = ['/api/auth/'];
 
 function isPublic(pathname: string): boolean {
+  if (PUBLIC_PAGE_EXACT.includes(pathname))                    return true;
   if (PUBLIC_PAGE_PREFIXES.some(p => pathname.startsWith(p))) return true;
   if (PUBLIC_API_PREFIXES.some(p => pathname.startsWith(p)))  return true;
   return false;
