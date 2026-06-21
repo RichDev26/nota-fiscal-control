@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 interface Usuario {
   id: string;
@@ -11,26 +11,35 @@ interface Usuario {
 interface SessionContextValue {
   usuario: Usuario | null;
   loading: boolean;
+  refreshSession: () => Promise<void>;
 }
 
-const SessionContext = createContext<SessionContextValue>({ usuario: null, loading: true });
+const SessionContext = createContext<SessionContextValue>({
+  usuario: null,
+  loading: true,
+  refreshSession: async () => {},
+});
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        setUsuario(d?.usuario ?? null);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+  const fetchSession = useCallback(async () => {
+    try {
+      const r = await fetch('/api/auth/me');
+      const d = r.ok ? await r.json() : null;
+      setUsuario(d?.usuario ?? null);
+    } catch {
+      setUsuario(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => { fetchSession(); }, [fetchSession]);
+
   return (
-    <SessionContext.Provider value={{ usuario, loading }}>
+    <SessionContext.Provider value={{ usuario, loading, refreshSession: fetchSession }}>
       {children}
     </SessionContext.Provider>
   );

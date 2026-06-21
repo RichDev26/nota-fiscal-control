@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  BarChart2, Download, FileSpreadsheet, FileText,
+  BarChart2, Download, FileSpreadsheet, FileText, Printer,
   Loader2, AlertCircle, TrendingUp, Receipt, DollarSign,
 } from 'lucide-react';
 import { formatarMoeda } from '@/lib/validators';
@@ -133,7 +133,7 @@ export default function RelatoriosPage() {
               onClick={() => window.open(`/api/relatorios/export-pdf?${params}`, '_blank')}
               className="btn-secondary w-full py-3.5 rounded-2xl text-sm justify-center font-bold"
             >
-              <FileText size={16} className="text-red-500" /> Exportar PDF
+              <Printer size={16} className="text-red-500" /> Imprimir Relatório
             </button>
             <button
               onClick={() => window.open(`/api/relatorios/export-excel?${params}`, '_blank')}

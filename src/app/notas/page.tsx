@@ -57,21 +57,19 @@ function NotaCard({ n, onAntecipar, onDelete }: { n: NotaFiscal; onAntecipar: (n
       </Link>
 
       {/* Actions row */}
-      {(podeAntecipar || true) && (
-        <div className="flex items-center gap-2 px-4 pb-3 pt-0">
-          <Link href={`/notas/${n.id}`} className="btn-ghost btn-sm py-1.5 flex items-center gap-1 text-gray-500">
-            <Eye size={13} /> Ver
-          </Link>
-          {podeAntecipar && (
-            <button onClick={() => onAntecipar(n)} className="btn-amber btn-sm py-1.5 flex items-center gap-1">
-              <Zap size={13} /> Antecipar
-            </button>
-          )}
-          <button onClick={() => onDelete(n)} className="btn-ghost btn-sm py-1.5 text-red-400 hover:text-red-600 ml-auto">
-            <Trash2 size={13} />
+      <div className="flex items-center gap-2 px-4 pb-3 pt-0">
+        <Link href={`/notas/${n.id}`} className="btn-ghost btn-sm py-1.5 flex items-center gap-1 text-gray-500">
+          <Eye size={13} /> Ver
+        </Link>
+        {podeAntecipar && (
+          <button onClick={() => onAntecipar(n)} className="btn-amber btn-sm py-1.5 flex items-center gap-1">
+            <Zap size={13} /> Antecipar
           </button>
-        </div>
-      )}
+        )}
+        <button onClick={() => onDelete(n)} className="btn-ghost btn-sm py-1.5 text-red-400 hover:text-red-600 ml-auto">
+          <Trash2 size={13} />
+        </button>
+      </div>
     </div>
   );
 }

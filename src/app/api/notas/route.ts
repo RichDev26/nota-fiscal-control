@@ -25,10 +25,11 @@ export async function GET(req: NextRequest) {
     if (status) where.status = status;
 
     if (dataInicio || dataFim) {
-      where.dataEmissao = {
+      const dateFilter = {
         ...(dataInicio ? { gte: new Date(dataInicio) } : {}),
-        ...(dataFim ? { lte: new Date(dataFim + 'T23:59:59') } : {}),
+        ...(dataFim    ? { lte: new Date(dataFim + 'T23:59:59') } : {}),
       };
+      where.AND = [{ OR: [{ dataEmissao: dateFilter }, { dataEmissao: null, createdAt: dateFilter }] }];
     }
 
     if (busca) {

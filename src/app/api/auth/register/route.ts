@@ -7,7 +7,11 @@ import { checkAuthRateLimit }         from '@/lib/auth-rate-limit';
 
 const schema = z.object({
   email:     z.string().email('E-mail inválido').max(255),
-  senha:     z.string().min(8, 'Mínimo 8 caracteres').max(128),
+  senha:     z.string()
+    .min(8, 'Mínimo 8 caracteres')
+    .max(128)
+    .regex(/[A-Z]/, 'Deve conter ao menos uma letra maiúscula')
+    .regex(/[0-9]/, 'Deve conter ao menos um número'),
   nome:      z.string().min(2, 'Nome muito curto').max(100).trim(),
 });
 

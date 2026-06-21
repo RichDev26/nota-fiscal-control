@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { PlusCircle, FileText, ChevronRight, TrendingUp, DollarSign, Receipt } from 'lucide-react';
+import { PlusCircle, FileText, ChevronRight, TrendingUp, DollarSign, Receipt, AlertCircle } from 'lucide-react';
 import { formatarMoeda, formatarData } from '@/lib/validators';
 import { STATUS_LABELS, STATUS_COLORS } from '@/types';
 import type { NotaFiscal } from '@/types';
@@ -18,15 +18,17 @@ interface Resumo {
 
 export default function Dashboard() {
   const { usuario } = useSession();
-  const [resumo,   setResumo]   = useState<Resumo | null>(null);
-  const [recentes, setRecentes] = useState<NotaFiscal[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [resumo,     setResumo]     = useState<Resumo | null>(null);
+  const [recentes,   setRecentes]   = useState<NotaFiscal[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [resumoErro, setResumoErro] = useState(false);
 
   useEffect(() => {
     Promise.all([
       fetch('/api/notas/resumo').then(r => r.ok ? r.json() : null),
       fetch('/api/notas?por=5&ordenarPor=createdAt&ordem=desc').then(r => r.json()),
     ]).then(([res, notas]) => {
+      if (res === null) setResumoErro(true);
       setResumo(res);
       setRecentes(notas.notas || []);
       setLoading(false);
@@ -59,6 +61,14 @@ export default function Dashboard() {
           <PlusCircle size={18} /> Nova Nota
         </Link>
       </div>
+
+      {/* ── Erro de resumo ── */}
+      {resumoErro && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl p-3.5 text-sm">
+          <AlertCircle size={15} className="shrink-0" />
+          Não foi possível carregar o resumo financeiro. Tente recarregar a página.
+        </div>
+      )}
 
       {/* ── Botão mobile ── */}
       <Link href="/notas/nova" className="btn-primary w-full justify-center py-4 rounded-2xl text-base sm:hidden">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Settings, User, Lock, Check, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useSession } from '@/context/SessionContext';
 
@@ -12,10 +12,11 @@ function Alert({ type, msg }: { type: 'ok' | 'err'; msg: string }) {
 }
 
 export default function ConfiguracoesPage() {
-  const { usuario } = useSession();
+  const { usuario, loading, refreshSession } = useSession();
 
   // ── Alterar nome ──────────────────────────────────────────────────────────────
-  const [nome,        setNome]        = useState(usuario?.nome ?? '');
+  const [nome,        setNome]        = useState('');
+  useEffect(() => { if (usuario?.nome) setNome(usuario.nome); }, [usuario?.nome]);
   const [nomeSt,      setNomeSt]      = useState<{ ok?: string; err?: string } | null>(null);
   const [nomeLoading, setNomeLoading] = useState(false);
 
@@ -34,6 +35,7 @@ export default function ConfiguracoesPage() {
       const data = await res.json();
       if (!res.ok) { setNomeSt({ err: data.error ?? 'Erro ao atualizar nome' }); return; }
       setNomeSt({ ok: 'Nome atualizado com sucesso!' });
+      await refreshSession();
     } catch {
       setNomeSt({ err: 'Erro de conexão. Tente novamente.' });
     } finally {
@@ -194,9 +196,14 @@ export default function ConfiguracoesPage() {
       </div>
 
       {/* ── Info da conta ── */}
-      {usuario && (
-        <div className="card p-5">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Conta</p>
+      <div className="card p-5">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Conta</p>
+        {loading ? (
+          <div className="space-y-2.5">
+            <div className="h-4 bg-gray-100 rounded animate-pulse w-3/4 ml-auto" />
+            <div className="h-4 bg-gray-100 rounded animate-pulse w-1/2 ml-auto" />
+          </div>
+        ) : usuario ? (
           <div className="space-y-2.5">
             <div className="flex justify-between">
               <span className="text-sm text-gray-500">E-mail</span>
@@ -207,8 +214,8 @@ export default function ConfiguracoesPage() {
               <span className="text-sm font-medium text-gray-900">{usuario.nome}</span>
             </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }
