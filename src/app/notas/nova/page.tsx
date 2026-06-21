@@ -22,12 +22,13 @@ const brl = (v: unknown) => {
 };
 
 // ─── Animated check item ──────────────────────────────────────────────────────
-function CheckItem({ label, delay }: { label: string; delay: number }) {
+function CheckItem({ label, delay, trigger }: { label: string; delay: number; trigger: boolean }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
+    if (!trigger) return;
     const t = setTimeout(() => setVisible(true), delay);
     return () => clearTimeout(t);
-  }, [delay]);
+  }, [delay, trigger]);
   return (
     <div className={`flex items-center gap-3 transition-all duration-500 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
       <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-colors duration-300 ${visible ? 'bg-green-100' : 'bg-gray-100'}`}>
@@ -88,6 +89,7 @@ export default function NovaNotaPage() {
   const [pdfFile, setPdfFile]   = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [extractError, setExtractError] = useState('');
+  const [extractDone, setExtractDone] = useState(false);
   const [extracted, setExtracted] = useState<PdfExtractResult | null>(null);
   const [pdfTempId, setPdfTempId] = useState('');
   const [savedId, setSavedId]   = useState('');
@@ -124,6 +126,7 @@ export default function NovaNotaPage() {
   const handleExtract = useCallback(async () => {
     if (!pdfFile) return;
     setPdfStep('extracting');
+    setExtractDone(false);
     setExtractError('');
     try {
       const fd = new FormData();
@@ -158,8 +161,9 @@ export default function NovaNotaPage() {
       if (data.prestador) setPrestador(Object.fromEntries(Object.entries(data.prestador).map(([k, v]) => [k, fmt(v)])));
       if (data.tomador)   setTomador(Object.fromEntries(Object.entries(data.tomador).map(([k, v]) => [k, fmt(v)])));
 
-      // aguarda animação dos checks (2.5s) e avança
-      setTimeout(() => setPdfStep('nome'), 2800);
+      // dispara animação dos checks (reais) e avança após ela terminar
+      setExtractDone(true);
+      setTimeout(() => setPdfStep('nome'), 2000);
     } catch {
       setExtractError('Erro ao processar o PDF. Tente novamente.');
       setPdfStep('upload');
@@ -324,24 +328,31 @@ export default function NovaNotaPage() {
   // ═══════════════════════════════════════════════════════════════════════════
   if (mode === 'pdf' && pdfStep === 'extracting') {
     const checks = [
-      { label: 'Número da nota encontrado',  delay: 400  },
-      { label: 'Prestador encontrado',        delay: 900  },
-      { label: 'Tomador encontrado',          delay: 1400 },
-      { label: 'Valores encontrados',         delay: 1900 },
-      { label: 'Dados validados',             delay: 2400 },
+      { label: 'Número da nota encontrado', delay: 200  },
+      { label: 'Prestador encontrado',       delay: 450  },
+      { label: 'Tomador encontrado',         delay: 700  },
+      { label: 'Valores encontrados',        delay: 950  },
+      { label: 'Dados validados',            delay: 1200 },
     ];
     return (
       <Shell>
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Sparkles size={28} className="text-blue-600 animate-pulse" />
+            {extractDone
+              ? <Sparkles size={28} className="text-blue-600 animate-pulse" />
+              : <Loader2  size={28} className="text-blue-600 animate-spin"  />
+            }
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Analisando sua nota...</h1>
-          <p className="text-gray-400 mt-1 text-sm">Aguarde enquanto extraímos os dados</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {extractDone ? 'Dados extraídos!' : 'Analisando sua nota...'}
+          </h1>
+          <p className="text-gray-400 mt-1 text-sm">
+            {extractDone ? 'Tudo certo, avançando...' : 'Aguarde enquanto extraímos os dados'}
+          </p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
-          {checks.map(c => <CheckItem key={c.label} label={c.label} delay={c.delay} />)}
+          {checks.map(c => <CheckItem key={c.label} label={c.label} delay={c.delay} trigger={extractDone} />)}
         </div>
       </Shell>
     );
