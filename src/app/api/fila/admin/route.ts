@@ -11,10 +11,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { executarRecovery, statusRecovery } from '@/lib/fila/recovery';
 import { purgarJobsConcluidos } from '@/lib/fila/fila-manager';
 import { purgarMetricasAntigas } from '@/lib/fila/monitoramento';
+import { requireFilaAdmin } from '@/lib/fila/auth-admin';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  const auth = await requireFilaAdmin();
+  if ('error' in auth) return auth.error;
+
   try {
     const body = await req.json();
     const { acao, diasRetencao = 30 } = body;

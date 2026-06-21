@@ -5,10 +5,14 @@ import { NextResponse } from 'next/server';
 import { gerarRelatorioFila, snapshotMetricas } from '@/lib/fila/monitoramento';
 import { avaliarAlertas } from '@/lib/fila/alertas';
 import { jobsPresosDetectados } from '@/lib/fila/fila-manager';
+import { requireFilaAdmin } from '@/lib/fila/auth-admin';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const auth = await requireFilaAdmin();
+  if ('error' in auth) return auth.error;
+
   try {
     const [relatorio, snapshot, alertasAvaliados, jobsPresos] = await Promise.all([
       gerarRelatorioFila(),

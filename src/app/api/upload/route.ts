@@ -14,14 +14,23 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File | null;
     if (!file) return NextResponse.json({ error: 'Nenhum arquivo' }, { status: 400 });
 
+    const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return NextResponse.json({ error: 'Tipo não permitido. Use PDF, JPG ou PNG.' }, { status: 400 });
+    }
+
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const uploadsDir = join(process.cwd(), 'public', 'uploads');
+    const uploadsDir = join(
+      process.cwd(),
+      process.env.NODE_ENV === 'production' ? 'data' : 'tmp',
+      'uploads',
+    );
     await mkdir(uploadsDir, { recursive: true });
     const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     await writeFile(join(uploadsDir, filename), buffer);
 
-    return NextResponse.json({ url: `/uploads/${filename}`, filename });
+    return NextResponse.json({ url: `/api/uploads/${filename}`, filename });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: 'Erro no upload' }, { status: 500 });

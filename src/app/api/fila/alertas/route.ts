@@ -4,10 +4,14 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { alertasAtivos, resolverAlerta, historicoAlertas, contarAlertasPorSeveridade } from '@/lib/fila/alertas';
+import { requireFilaAdmin } from '@/lib/fila/auth-admin';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const auth = await requireFilaAdmin();
+  if ('error' in auth) return auth.error;
+
   try {
     const p = new URL(req.url).searchParams;
     const incluirHistorico = p.get('historico') === 'true';
@@ -27,6 +31,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireFilaAdmin();
+  if ('error' in auth) return auth.error;
+
   try {
     const body = await req.json();
     const { tipo } = body;

@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { criarJob, listarJobs, contarPorStatus } from '@/lib/fila/fila-manager';
 import type { TipoJob, StatusJob } from '@/lib/fila/tipos-fila';
+import { requireFilaAdmin } from '@/lib/fila/auth-admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,9 @@ const STATUS_VALIDOS = new Set<StatusJob>([
 ]);
 
 export async function GET(req: NextRequest) {
+  const auth = await requireFilaAdmin();
+  if ('error' in auth) return auth.error;
+
   try {
     const p = new URL(req.url).searchParams;
     const status   = p.get('status') as StatusJob | null;
@@ -44,6 +48,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireFilaAdmin();
+  if ('error' in auth) return auth.error;
+
   try {
     const body = await req.json();
     const { tipo, payload, prioridade, documentoId, arquivoHash, usuarioId, maxTentativas } = body;

@@ -171,11 +171,12 @@ export default function ImpostosPage() {
   };
 
   const handlePago = async (imp: Imposto) => {
-    await fetch(`/api/impostos/${imp.id}`, {
+    const res = await fetch(`/api/impostos/${imp.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...imp, status: 'pago', dataPagamento: new Date().toISOString().split('T')[0] }),
+      body: JSON.stringify({ status: 'pago', dataPagamento: new Date().toISOString().split('T')[0] }),
     });
+    if (!res.ok) { showToast('Erro ao marcar como pago.', 'error'); return; }
     showToast('Marcado como pago!');
     fetchImpostos();
   };
