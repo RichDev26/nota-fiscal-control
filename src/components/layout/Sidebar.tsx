@@ -37,9 +37,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="px-5 py-5">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center shrink-0 shadow-sm shadow-blue-200">
-            <FileText size={15} className="text-white" />
-          </div>
+          <img src="/logo.png" alt="WorkPro Control" className="w-8 h-8 shrink-0" />
           <div>
             <p className="font-bold text-gray-900 text-sm leading-tight">NF Control</p>
             <p className="text-[10px] text-gray-400 font-medium">Notas Fiscais</p>
