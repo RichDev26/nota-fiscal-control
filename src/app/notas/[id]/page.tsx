@@ -62,6 +62,25 @@ function FEdit({ label, fkey, type = 'text', source, setter }: { label: string; 
   );
 }
 
+// ─── Histórico helpers ────────────────────────────────────────────────────────
+const CAMPO_LABELS: Record<string, string> = {
+  status:          'Status',
+  valorBruto:      'Valor Bruto',
+  valorLiquido:    'Valor Líquido',
+  dataRecebimento: 'Data Recebimento',
+  observacoes:     'Observações',
+};
+
+function formatCampoValue(campo: string | null | undefined, valor: string | null | undefined): string {
+  if (!valor || valor === 'null' || valor === 'undefined' || valor === '') return '';
+  if (campo === 'status') return STATUS_LABELS[valor] || valor;
+  if (campo === 'valorBruto' || campo === 'valorLiquido') {
+    const n = parseFloat(valor);
+    return isNaN(n) ? valor : formatarMoeda(n);
+  }
+  return valor;
+}
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ msg, type, onClose }: { msg: string; type: 'success' | 'error'; onClose: () => void }) {
   useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, [onClose]);
@@ -88,6 +107,7 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
   const [error, setError]    = useState('');
   const [toast, setToast]    = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [showFiscal, setShowFiscal]       = useState(false);
+  const [showHistorico, setShowHistorico] = useState(false);
   const [anteciparNota, setAnteciparNota] = useState<NotaFiscal | null>(null);
   const [showSuccess, setShowSuccess]     = useState(false);
 
@@ -478,6 +498,62 @@ export default function NotaDetailPage({ params }: { params: { id: string } }) {
                   </div>
                   {nota.observacoesFiscais && <div><p className="label">Observações Fiscais</p><p className="text-sm text-gray-700 leading-relaxed">{nota.observacoesFiscais}</p></div>}
                   {nota.observacoes && <div><p className="label">Observações</p><p className="text-sm text-gray-700 leading-relaxed">{nota.observacoes}</p></div>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Histórico de Alterações */}
+          {nota.historico && nota.historico.length > 0 && (
+            <div className="card overflow-hidden">
+              <button
+                className="w-full flex items-center justify-between p-5 text-left"
+                onClick={() => setShowHistorico(h => !h)}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="font-bold text-gray-900 text-sm">Histórico de Alterações</span>
+                  <span className="text-[10px] font-bold bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">
+                    {nota.historico.length}
+                  </span>
+                </div>
+                <ChevronDown size={16} className={`text-gray-400 transition-transform ${showHistorico ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showHistorico && (
+                <div className="border-t border-gray-50 divide-y divide-gray-50">
+                  {nota.historico.map(h => {
+                    const ant = formatCampoValue(h.campoAlterado, h.valorAntigo);
+                    const nov = formatCampoValue(h.campoAlterado, h.valorNovo);
+                    const dataHora = new Date(h.dataAcao).toLocaleString('pt-BR', {
+                      day: '2-digit', month: '2-digit', year: '2-digit',
+                      hour: '2-digit', minute: '2-digit',
+                    });
+                    return (
+                      <div key={h.id} className="px-5 py-3 flex items-start gap-3">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-300 mt-2 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-xs font-bold text-gray-700">
+                              {CAMPO_LABELS[h.campoAlterado ?? ''] || h.campoAlterado || 'Campo'}
+                            </span>
+                            {h.usuario && (
+                              <span className="text-[10px] text-gray-400">por {h.usuario}</span>
+                            )}
+                            <span className="text-[10px] text-gray-300 ml-auto shrink-0">{dataHora}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs text-gray-400 line-through truncate max-w-[140px]">
+                              {ant || '—'}
+                            </span>
+                            <span className="text-[10px] text-gray-300">→</span>
+                            <span className="text-xs font-semibold text-gray-700 truncate max-w-[140px]">
+                              {nov || '—'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
