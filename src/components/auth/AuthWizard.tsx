@@ -55,9 +55,7 @@ function validateEmail(v: string) {
 function Logo() {
   return (
     <div className="flex items-center gap-2 mb-8">
-      <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center shadow-sm">
-        <FileText size={18} className="text-white" />
-      </div>
+      <img src="/logo.png" alt="WorkPro Control" className="w-9 h-9 shrink-0" />
       <span className="text-lg font-semibold text-gray-900 tracking-tight">NF Control</span>
     </div>
   );
