@@ -2,6 +2,7 @@ import React from 'react';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
+import ScrollReveal from '@/components/landing/ScrollReveal';
 
 export const metadata: Metadata = {
   title: 'WorkPro Control — Notas fiscais por IA',
@@ -48,6 +49,34 @@ export default async function HomePage() {
           .lp .offer-grid{grid-template-columns:1fr !important;}
           .lp .float-phone{display:none !important;}
         }
+
+        /* ── Smooth scroll ── */
+        html{scroll-behavior:smooth;}
+
+        /* ── Hero entrance ── */
+        @keyframes lp-up{
+          from{opacity:0;transform:translateY(28px);}
+          to{opacity:1;transform:translateY(0);}
+        }
+        .lp .h1{animation:lp-up .75s cubic-bezier(.16,1,.3,1) .05s both;}
+        .lp .h2{animation:lp-up .75s cubic-bezier(.16,1,.3,1) .18s both;}
+        .lp .h3{animation:lp-up .75s cubic-bezier(.16,1,.3,1) .30s both;}
+        .lp .h4{animation:lp-up .75s cubic-bezier(.16,1,.3,1) .42s both;}
+
+        /* ── Scroll reveal ── */
+        .lp .sr{opacity:0;transform:translateY(26px);transition:opacity .6s cubic-bezier(.16,1,.3,1),transform .6s cubic-bezier(.16,1,.3,1);}
+        .lp .sr.in{opacity:1;transform:none;}
+        .lp .sr-d1{transition-delay:.07s;}
+        .lp .sr-d2{transition-delay:.14s;}
+        .lp .sr-d3{transition-delay:.21s;}
+        .lp .sr-d4{transition-delay:.28s;}
+        .lp .sr-d5{transition-delay:.35s;}
+        .lp .sr-d6{transition-delay:.42s;}
+
+        /* ── CTA button hover ── */
+        .lp .cta{transition:transform .15s ease,box-shadow .15s ease,filter .15s ease;}
+        .lp .cta:hover{transform:scale(1.025) translateY(-2px);filter:brightness(1.06);}
+        .lp .cta:active{transform:scale(.98);}
       `}</style>
 
       <div className="lp" style={s("background:#F6F6F3;color:#1B1B1A;font-family:'Hanken Grotesk',sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden;")}>
@@ -76,18 +105,18 @@ export default async function HomePage() {
 
         {/* HERO */}
         <header id="topo" style={s("position:relative;max-width:1180px;margin:0 auto;padding:78px 24px 0;text-align:center;")}>
-          <div style={s("display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid rgba(0,0,0,0.06);padding:7px 15px;border-radius:999px;font-size:13px;font-weight:600;color:#56564F;box-shadow:0 1px 2px rgba(0,0,0,0.03);")}>
+          <div className="h1" style={s("display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid rgba(0,0,0,0.06);padding:7px 15px;border-radius:999px;font-size:13px;font-weight:600;color:#56564F;box-shadow:0 1px 2px rgba(0,0,0,0.03);")}>
             <span style={s("width:7px;height:7px;border-radius:50%;background:#2563EB;display:inline-block;")}></span>
             7 dias grátis · sem cartão de crédito
           </div>
-          <h1 style={s("font-family:Georgia,serif;font-weight:500;font-size:clamp(42px,7vw,86px);line-height:1.0;letter-spacing:-0.02em;margin:26px auto 0;max-width:14ch;")}>
+          <h1 className="h2" style={s("font-family:Georgia,serif;font-weight:500;font-size:clamp(42px,7vw,86px);line-height:1.0;letter-spacing:-0.02em;margin:26px auto 0;max-width:14ch;")}>
             Chega de montar relatório fiscal na madrugada.
           </h1>
-          <p style={s("font-size:clamp(17px,2vw,20px);line-height:1.55;color:#56564F;max-width:50ch;margin:24px auto 0;")}>
+          <p className="h3" style={s("font-size:clamp(17px,2vw,20px);line-height:1.55;color:#56564F;max-width:50ch;margin:24px auto 0;")}>
             O WorkPro Control lê o PDF da sua nota, extrai todos os dados automaticamente e ainda controla seus impostos — sem você digitar uma linha sequer.
           </p>
-          <div style={s("margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:12px;")}>
-            <a href="#preco" style={s("background:#2563EB;color:#fff;font-weight:600;font-size:17px;padding:16px 34px;border-radius:999px;box-shadow:0 10px 24px -8px rgba(37,99,235,0.55);")}>
+          <div className="h4" style={s("margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:12px;")}>
+            <a href="#preco" className="cta" style={s("background:#2563EB;color:#fff;font-weight:600;font-size:17px;padding:16px 34px;border-radius:999px;box-shadow:0 10px 24px -8px rgba(37,99,235,0.55);")}>
               Começar grátis por 7 dias
             </a>
             <span style={s("font-size:13px;color:#8A8A82;font-weight:500;")}>Sem cartão de crédito • Cancele quando quiser</span>
@@ -106,7 +135,7 @@ export default async function HomePage() {
         </header>
 
         {/* 3-UP MINI BENEFITS */}
-        <section style={s("max-width:1000px;margin:0 auto;padding:64px 24px 18px;")}>
+        <section className="sr" style={s("max-width:1000px;margin:0 auto;padding:64px 24px 18px;")}>
           <div className="grid-3" style={s("display:grid;grid-template-columns:repeat(3,1fr);gap:24px;text-align:center;")}>
             <div style={s("display:flex;flex-direction:column;align-items:center;gap:14px;")}>
               <span style={s("width:52px;height:52px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.04);")}>
@@ -142,7 +171,7 @@ export default async function HomePage() {
         </section>
 
         {/* PROBLEM */}
-        <section style={s("max-width:1180px;margin:0 auto;padding:96px 24px 0;")}>
+        <section className="sr" style={s("max-width:1180px;margin:0 auto;padding:96px 24px 0;")}>
           <div style={s("max-width:780px;margin:0 auto;text-align:center;")}>
             <p style={s("font-size:13px;font-weight:700;letter-spacing:0.14em;color:#2563EB;text-transform:uppercase;margin:0 0 16px;")}>A rotina de quem é PJ</p>
             <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(32px,4.4vw,52px);line-height:1.06;letter-spacing:-0.02em;margin:0;")}>Todo mês, a mesma história.</h2>
@@ -159,7 +188,7 @@ export default async function HomePage() {
               'Montando o relatório do trimestre na véspera, na raça.',
               'Sem histórico de nada — e rezando pra nunca ter uma auditoria.',
             ].map((text, i) => (
-              <div key={i} style={s("background:#fff;border:1px solid rgba(0,0,0,0.05);border-radius:16px;padding:22px 24px;display:flex;gap:14px;align-items:flex-start;")}>
+              <div key={i} className={`sr sr-d${i + 1}`} style={s("background:#fff;border:1px solid rgba(0,0,0,0.05);border-radius:16px;padding:22px 24px;display:flex;gap:14px;align-items:flex-start;")}>
                 <span style={s("color:#C7483B;font-size:18px;line-height:1.4;flex:none;")}>✕</span>
                 <p style={s("margin:0;font-size:15.5px;line-height:1.5;color:#3A3A36;")}>{text}</p>
               </div>
@@ -172,7 +201,7 @@ export default async function HomePage() {
 
         {/* SOLUTION / STEPS */}
         <section id="como-funciona" style={s("max-width:1180px;margin:0 auto;padding:104px 24px 0;")}>
-          <div style={s("max-width:760px;margin:0 auto;text-align:center;")}>
+          <div className="sr" style={s("max-width:760px;margin:0 auto;text-align:center;")}>
             <p style={s("font-size:13px;font-weight:700;letter-spacing:0.14em;color:#2563EB;text-transform:uppercase;margin:0 0 16px;")}>Como funciona</p>
             <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(34px,5vw,60px);line-height:1.02;letter-spacing:-0.02em;margin:0;")}>
               Você fez a nota.<br />A IA faz o resto.
@@ -186,8 +215,8 @@ export default async function HomePage() {
               { n: '1', title: 'Faça upload do PDF', desc: 'Arraste a nota fiscal que você já emitiu no portal da prefeitura.' },
               { n: '2', title: 'A IA extrai tudo', desc: 'Em segundos, todos os campos são lidos e preenchidos por você.' },
               { n: '3', title: 'Revise e pronto', desc: 'Confira, salve, e seus impostos já entram no painel — totalizados.' },
-            ].map((step) => (
-              <div key={step.n} style={s("background:#fff;border:1px solid rgba(0,0,0,0.05);border-radius:20px;padding:32px 28px;box-shadow:0 4px 14px rgba(0,0,0,0.03);")}>
+            ].map((step, i) => (
+              <div key={step.n} className={`sr sr-d${i + 1}`} style={s("background:#fff;border:1px solid rgba(0,0,0,0.05);border-radius:20px;padding:32px 28px;box-shadow:0 4px 14px rgba(0,0,0,0.03);")}>
                 <span style={s("display:inline-flex;width:38px;height:38px;border-radius:50%;background:#EAF0FE;color:#2563EB;font-weight:700;align-items:center;justify-content:center;font-size:16px;")}>{step.n}</span>
                 <h3 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:23px;margin:20px 0 8px;")}>{step.title}</h3>
                 <p style={s("margin:0;font-size:15px;line-height:1.55;color:#6B6B64;")}>{step.desc}</p>
@@ -198,7 +227,7 @@ export default async function HomePage() {
 
         {/* DEVICE SHOWCASE */}
         <section style={s("max-width:1180px;margin:0 auto;padding:104px 24px 0;")}>
-          <div style={s("max-width:720px;margin:0 auto 8px;text-align:center;")}>
+          <div className="sr" style={s("max-width:720px;margin:0 auto 8px;text-align:center;")}>
             <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(32px,4.4vw,52px);line-height:1.05;letter-spacing:-0.02em;margin:0;")}>
               No computador às 22h. No celular saindo da reunião.
             </h2>
@@ -206,7 +235,7 @@ export default async function HomePage() {
               O mesmo painel, em qualquer tela. Lançou uma nota no celular? Funciona. Gerou o relatório no notebook? Também.
             </p>
           </div>
-          <div style={s("position:relative;margin:56px auto 0;max-width:1000px;")}>
+          <div className="sr" style={s("position:relative;margin:56px auto 0;max-width:1000px;")}>
             <div style={s("background:linear-gradient(135deg,#EEF2FB,#F3EEEA);border-radius:28px;padding:50px 42px 44px;border:1px solid rgba(0,0,0,0.04);")}>
               <div style={s("max-width:740px;margin:0 auto;")}>
                 <div style={s("position:relative;background:#1B1C21;border-radius:16px 16px 5px 5px;padding:13px;box-shadow:0 26px 60px -26px rgba(20,22,40,0.5);")}>
@@ -229,7 +258,7 @@ export default async function HomePage() {
 
         {/* BENEFITS */}
         <section id="beneficios" style={s("max-width:1180px;margin:0 auto;padding:120px 24px 0;")}>
-          <div style={s("max-width:680px;margin:0 auto;text-align:center;")}>
+          <div className="sr" style={s("max-width:680px;margin:0 auto;text-align:center;")}>
             <p style={s("font-size:13px;font-weight:700;letter-spacing:0.14em;color:#2563EB;text-transform:uppercase;margin:0 0 16px;")}>O que muda na sua vida</p>
             <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(32px,4.4vw,52px);line-height:1.05;letter-spacing:-0.02em;margin:0;")}>
               Controle fiscal de verdade, sem virar contador de si mesmo.
@@ -268,7 +297,7 @@ export default async function HomePage() {
                 desc: 'Cada conta é isolada. Ninguém acessa suas notas além de você.',
               },
             ].map((item, i) => (
-              <div key={i} style={s("background:#fff;border:1px solid rgba(0,0,0,0.05);border-radius:18px;padding:28px;")}>
+              <div key={i} className={`sr sr-d${i + 1}`} style={s("background:#fff;border:1px solid rgba(0,0,0,0.05);border-radius:18px;padding:28px;")}>
                 <span style={s("display:inline-flex;width:42px;height:42px;border-radius:11px;background:#EAF0FE;align-items:center;justify-content:center;")}>{item.icon}</span>
                 <h3 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:21px;margin:18px 0 7px;")}>{item.title}</h3>
                 <p style={s("margin:0;font-size:14.5px;line-height:1.55;color:#6B6B64;")}>{item.desc}</p>
@@ -278,7 +307,7 @@ export default async function HomePage() {
         </section>
 
         {/* SOCIAL PROOF */}
-        <section style={s("max-width:1180px;margin:0 auto;padding:104px 24px 0;text-align:center;")}>
+        <section className="sr" style={s("max-width:1180px;margin:0 auto;padding:104px 24px 0;text-align:center;")}>
           <p style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(40px,6vw,76px);line-height:1;letter-spacing:-0.02em;margin:0;color:#2563EB;")}>+800</p>
           <p style={s("font-size:19px;color:#3A3A36;margin:16px auto 0;max-width:40ch;")}>
             prestadores de serviço já organizaram suas notas com o WorkPro Control.
@@ -287,11 +316,11 @@ export default async function HomePage() {
 
         {/* PRICING */}
         <section id="preco" style={s("max-width:1180px;margin:0 auto;padding:104px 24px 0;")}>
-          <div style={s("max-width:640px;margin:0 auto 44px;text-align:center;")}>
+          <div className="sr" style={s("max-width:640px;margin:0 auto 44px;text-align:center;")}>
             <p style={s("font-size:13px;font-weight:700;letter-spacing:0.14em;color:#2563EB;text-transform:uppercase;margin:0 0 16px;")}>A oferta</p>
             <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(32px,4.4vw,52px);line-height:1.05;letter-spacing:-0.02em;margin:0;")}>Um plano. Tudo incluso.</h2>
           </div>
-          <div className="offer-grid" style={s("display:grid;grid-template-columns:1.05fr 0.95fr;gap:0;max-width:960px;margin:0 auto;border-radius:26px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(20,22,40,0.5);")}>
+          <div className="offer-grid sr sr-d1" style={s("display:grid;grid-template-columns:1.05fr 0.95fr;gap:0;max-width:960px;margin:0 auto;border-radius:26px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(20,22,40,0.5);")}>
             <div style={s("background:#fff;padding:44px 42px;border:1px solid rgba(0,0,0,0.06);border-right:none;")}>
               <h3 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:26px;margin:0 0 4px;")}>WorkPro Control</h3>
               <p style={s("margin:0 0 26px;color:#8A8A82;font-size:14px;font-weight:500;")}>Plano único · tudo que você precisa</p>
@@ -326,7 +355,7 @@ export default async function HomePage() {
                 <span style={s("font-family:'Newsreader',serif;font-weight:500;font-size:64px;line-height:1;")}>R$ 49,90</span>
               </div>
               <p style={s("margin:6px 0 0;color:#A6A8AF;font-size:14px;")}>por mês</p>
-              <a href="/auth" style={s("margin:26px 0 0;background:#fff;color:#15161A;font-weight:700;font-size:16px;padding:15px 24px;border-radius:999px;")}>
+              <a href="/auth" className="cta" style={s("margin:26px 0 0;background:#fff;color:#15161A;font-weight:700;font-size:16px;padding:15px 24px;border-radius:999px;")}>
                 Começar grátis por 7 dias
               </a>
               <p style={s("margin:16px 0 0;color:#8A8C93;font-size:12.5px;line-height:1.5;")}>
@@ -338,7 +367,7 @@ export default async function HomePage() {
         </section>
 
         {/* OBJECTIONS */}
-        <section style={s("max-width:820px;margin:0 auto;padding:104px 24px 0;")}>
+        <section className="sr" style={s("max-width:820px;margin:0 auto;padding:104px 24px 0;")}>
           <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(30px,4vw,46px);line-height:1.05;letter-spacing:-0.02em;margin:0 0 28px;text-align:center;")}>
             Antes que você pergunte
           </h2>
@@ -363,7 +392,7 @@ export default async function HomePage() {
 
         {/* GUARANTEE */}
         <section style={s("max-width:1180px;margin:0 auto;padding:104px 24px 0;")}>
-          <div style={s("max-width:760px;margin:0 auto;background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:24px;padding:48px 44px;text-align:center;box-shadow:0 4px 18px rgba(0,0,0,0.04);")}>
+          <div className="sr" style={s("max-width:760px;margin:0 auto;background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:24px;padding:48px 44px;text-align:center;box-shadow:0 4px 18px rgba(0,0,0,0.04);")}>
             <span style={s("display:inline-flex;width:58px;height:58px;border-radius:50%;background:#EAF0FE;align-items:center;justify-content:center;")}>
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
                 <path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3z" stroke="#2563EB" strokeWidth="1.7" strokeLinejoin="round" />
@@ -381,7 +410,7 @@ export default async function HomePage() {
 
         {/* URGENCY */}
         <section style={s("max-width:1180px;margin:0 auto;padding:104px 24px 0;")}>
-          <div style={s("background:#2563EB;border-radius:26px;padding:56px 44px;text-align:center;color:#fff;position:relative;overflow:hidden;")}>
+          <div className="sr" style={s("background:#2563EB;border-radius:26px;padding:56px 44px;text-align:center;color:#fff;position:relative;overflow:hidden;")}>
             <div style={s("position:absolute;inset:0;background:radial-gradient(40% 60% at 80% 20%, rgba(255,255,255,0.12), transparent 70%);")}></div>
             <div style={s("position:relative;")}>
               <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(30px,4.2vw,50px);line-height:1.05;letter-spacing:-0.02em;margin:0;")}>
@@ -390,7 +419,7 @@ export default async function HomePage() {
               <p style={s("font-size:18px;line-height:1.6;color:#DCE6FF;margin:20px auto 0;max-width:52ch;")}>
                 São 75% de desconto enquanto estamos em fase de expansão. Quando esse período acabar, o valor volta pra R$ 199,90/mês. Quem entrar agora trava o preço promocional enquanto mantiver a assinatura ativa.
               </p>
-              <a href="#preco" style={s("display:inline-block;margin-top:30px;background:#fff;color:#15161A;font-weight:700;font-size:16.5px;padding:16px 32px;border-radius:999px;")}>
+              <a href="#preco" className="cta" style={s("display:inline-block;margin-top:30px;background:#fff;color:#15161A;font-weight:700;font-size:16.5px;padding:16px 32px;border-radius:999px;")}>
                 Quero garantir meu desconto de 75%
               </a>
             </div>
@@ -399,10 +428,10 @@ export default async function HomePage() {
 
         {/* FAQ */}
         <section id="faq" style={s("max-width:820px;margin:0 auto;padding:104px 24px 0;")}>
-          <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(30px,4vw,46px);line-height:1.05;letter-spacing:-0.02em;margin:0 0 28px;text-align:center;")}>
+          <h2 className="sr" style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(30px,4vw,46px);line-height:1.05;letter-spacing:-0.02em;margin:0 0 28px;text-align:center;")}>
             Perguntas frequentes
           </h2>
-          <div>
+          <div className="sr sr-d1">
             {[
               { q: 'Preciso instalar alguma coisa?', a: 'Não. Funciona 100% no navegador — celular ou computador. É só acessar, fazer login e começar a usar.' },
               { q: 'Como funciona o período de teste?', a: 'São 7 dias com acesso completo a tudo, sem pedir cartão. Se gostar, assina ao final. Se não, é só não assinar — sem cobranças.' },
@@ -425,14 +454,14 @@ export default async function HomePage() {
 
         {/* FINAL CTA */}
         <section style={s("max-width:1180px;margin:0 auto;padding:120px 24px 0;text-align:center;")}>
-          <h2 style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(36px,5.4vw,68px);line-height:1.02;letter-spacing:-0.02em;margin:0 auto;max-width:18ch;")}>
+          <h2 className="sr" style={s("font-family:'Newsreader',serif;font-weight:500;font-size:clamp(36px,5.4vw,68px);line-height:1.02;letter-spacing:-0.02em;margin:0 auto;max-width:18ch;")}>
             Você já perdeu tempo suficiente com isso.
           </h2>
-          <p style={s("font-size:18px;line-height:1.6;color:#56564F;margin:24px auto 0;max-width:50ch;")}>
+          <p className="sr sr-d1" style={s("font-size:18px;line-height:1.6;color:#56564F;margin:24px auto 0;max-width:50ch;")}>
             Deixe o WorkPro Control fazer esse trabalho no seu lugar — pra você focar no que importa e terminar o dia sabendo que nada ficou esquecido.
           </p>
-          <div style={s("margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:12px;")}>
-            <a href="/auth" style={s("background:#2563EB;color:#fff;font-weight:600;font-size:17px;padding:16px 36px;border-radius:999px;box-shadow:0 10px 24px -8px rgba(37,99,235,0.55);")}>
+          <div className="sr sr-d2" style={s("margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:12px;")}>
+            <a href="/auth" className="cta" style={s("background:#2563EB;color:#fff;font-weight:600;font-size:17px;padding:16px 36px;border-radius:999px;box-shadow:0 10px 24px -8px rgba(37,99,235,0.55);")}>
               Começar meus 7 dias grátis →
             </a>
             <span style={s("font-size:13px;color:#8A8A82;font-weight:500;")}>Desconto de 75% garantido pra quem entrar hoje</span>
@@ -470,6 +499,7 @@ export default async function HomePage() {
           Começar grátis por 7 dias
         </a>
 
+        <ScrollReveal />
       </div>
     </>
   );
