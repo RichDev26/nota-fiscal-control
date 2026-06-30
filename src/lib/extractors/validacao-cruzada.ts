@@ -589,6 +589,56 @@ function buildEstatisticas(comparacao: CampoComparado[]): ValidacaoCruzadaResult
   };
 }
 
+// ─── FASE 13.1 — FIELD OWNERSHIP VALIDATION ───────────────────────────────────
+
+/**
+ * Campos EXCLUSIVOS de uma entidade (não podem ser legitimamente compartilhados
+ * entre Prestador e Tomador). município/uf/cep ficam de fora porque duas empresas
+ * podem realmente coincidir (mesma cidade/CEP) — não seria vazamento.
+ */
+const CAMPOS_EXCLUSIVOS = ['email', 'telefone', 'endereco', 'inscricao_municipal'] as const;
+
+function normOwnership(v: string | null): string {
+  return (v ?? '').toLowerCase().replace(/\s+/g, '');
+}
+
+/**
+ * Impede que um campo exclusivo de uma entidade seja preenchido com o valor da
+ * outra. O Método B varre o documento sem disciplina de zona e pode atribuir, por
+ * exemplo, o e-mail do Prestador também ao Tomador. Regra (espec. Fase 13.1):
+ * se prestador.X e tomador.X têm o MESMO valor (logo NÃO existem dois valores
+ * distintos no documento), mantém-se o valor apenas na entidade onde o Método A
+ * (zona-aware) realmente o encontrou; o outro volta a NULL. Sem fallback, sem
+ * cópia entre entidades, sem inferência. Reutiliza o resultado de comparação já
+ * existente — não re-extrai nem redetecta zonas.
+ */
+function enforceFieldOwnership(comparacao: CampoComparado[]): void {
+  const byKey = new Map(comparacao.map(c => [c.campo, c]));
+  for (const base of CAMPOS_EXCLUSIVOS) {
+    const pf = byKey.get(`prestador.${base}`);
+    const tf = byKey.get(`tomador.${base}`);
+    if (!pf || !tf) continue;
+
+    const pv = pf.resultado_final.valor;
+    const tv = tf.resultado_final.valor;
+    if (!pv || !tv) continue;                              // não há duplicação
+    if (normOwnership(pv) !== normOwnership(tv)) continue; // valores distintos → ok, evidência própria
+
+    // Duplicação detectada. Dono = entidade onde o Método A (com zona) achou o valor.
+    const presA = pf.metodo_a.valor != null;
+    const tomA  = tf.metodo_a.valor != null;
+    // Default: o Tomador perde (o "segundo campo" da espec). Inverte só se A indicar o contrário.
+    const vitima = (tomA && !presA) ? pf : tf;
+    const valorVazado = vitima === tf ? tv : pv;
+
+    vitima.resultado_final = { valor: null, confianca: 0, metodo_vencedor: 'NENHUM', origem: 'AUSENTE' };
+    vitima.revisao_obrigatoria = false;
+    vitima.explicacao =
+      `Field ownership (Fase 13.1): "${valorVazado}" idêntico ao da outra entidade e sem ` +
+      `evidência própria na zona — campo anulado para impedir vazamento entre entidades`;
+  }
+}
+
 // ─── PONTO DE ENTRADA ─────────────────────────────────────────────────────────
 
 /**
@@ -607,6 +657,7 @@ export async function validateCrossCheck(pdfBuffer: Buffer): Promise<ValidacaoCr
   ]);
 
   const comparacao    = compareFields(metodoA, metodoB);
+  enforceFieldOwnership(comparacao);   // Fase 13.1 — anula campos exclusivos vazados entre entidades
   const consolidado   = consolidate(comparacao);
   const estatisticas  = buildEstatisticas(comparacao);
 
