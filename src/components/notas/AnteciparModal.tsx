@@ -63,16 +63,31 @@ export function AnteciparModal({
   const venc = nota.dataVencimento ? new Date(nota.dataVencimento) : null;
   const diasDefault = venc ? Math.max(1, Math.ceil((venc.getTime() - hoje.getTime()) / 86400000)) : 30;
 
+  // Modo "Valor do Encargo" é o padrão — exige um único campo do usuário.
+  const [modo, setModo] = useState<'DIRECT_FEE' | 'RATE_AND_DAYS'>('DIRECT_FEE');
+
+  // Modo Taxa + Dias — lógica de cálculo 100% preservada do que já existia.
   const [taxa, setTaxa]     = useState('2.50');
   const [dias, setDias]     = useState(String(diasDefault));
+
+  // Modo Valor do Encargo — único campo novo.
+  const [encargoInput, setEncargoInput] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [err, setErr]       = useState('');
 
-  const valorBase       = nota.valorLiquido ?? nota.valorBruto ?? 0;
-  const encargos        = valorBase * (parseFloat(taxa) / 100) * (parseInt(dias) / 30);
+  const valorBase = nota.valorLiquido ?? nota.valorBruto ?? 0;
+
+  const encargosRateAndDays = valorBase * (parseFloat(taxa) / 100) * (parseInt(dias) / 30);
+  const encargoDireto       = parseFloat(encargoInput.replace(',', '.')) || 0;
+
+  const encargos        = modo === 'DIRECT_FEE' ? encargoDireto : encargosRateAndDays;
   const valorAntecipado = Math.max(0, valorBase - encargos);
 
+  const encargoInvalido = modo === 'DIRECT_FEE' && (encargoDireto < 0 || encargoDireto > valorBase);
+
   const handleAntecipar = async () => {
+    if (encargoInvalido) return;
     setLoading(true); setErr('');
     try {
       const res = await fetch(`/api/notas/${nota.id}`, {
@@ -83,6 +98,9 @@ export function AnteciparModal({
           dataRecebimento:              hoje.toISOString().split('T')[0],
           valorLiquidoAntecipacao:      parseFloat(valorAntecipado.toFixed(2)),
           valorTotalTributosAntecipacao: parseFloat(encargos.toFixed(2)),
+          metodoAntecipacao:            modo,
+          taxaAntecipacao:              modo === 'RATE_AND_DAYS' ? parseFloat(taxa) : null,
+          diasAntecipacao:              modo === 'RATE_AND_DAYS' ? parseInt(dias)   : null,
         }),
       });
       if (!res.ok) { const d = await res.json(); setErr(d.detail || d.error || 'Erro.'); return; }
@@ -125,26 +143,72 @@ export function AnteciparModal({
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div>
-            <label className="label">Taxa (% ao mês)</label>
-            <input
-              type="number" step="0.1" min="0" max="20" className="input"
-              value={taxa} onChange={e => setTaxa(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="label">Dias até vencimento</label>
-            <input
-              type="number" step="1" min="1" className="input"
-              value={dias} onChange={e => setDias(e.target.value)}
-            />
+        <div className="mb-4">
+          <label className="label">Modo de cálculo</label>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { v: 'DIRECT_FEE',     label: 'Valor do Encargo' },
+              { v: 'RATE_AND_DAYS',  label: 'Taxa + Dias' },
+            ] as const).map(opt => (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setModo(opt.v)}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-semibold transition-colors ${
+                  modo === opt.v
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                <span className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 ${
+                  modo === opt.v ? 'border-blue-500' : 'border-gray-300'
+                }`}>
+                  {modo === opt.v && <span className="block w-1.5 h-1.5 m-auto mt-[3px] rounded-full bg-blue-500" />}
+                </span>
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
 
+        {modo === 'DIRECT_FEE' ? (
+          <div className="mb-4">
+            <label className="label">Valor do Encargo</label>
+            <input
+              type="number" step="0.01" min="0" inputMode="decimal" className="input"
+              placeholder="0,00"
+              value={encargoInput} onChange={e => setEncargoInput(e.target.value)}
+            />
+            {encargoInvalido && (
+              <p className="text-xs text-red-500 mt-1">
+                {encargoDireto < 0 ? 'O encargo não pode ser negativo.' : 'O encargo não pode ser maior que o valor líquido da nota.'}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="label">Taxa (% ao mês)</label>
+              <input
+                type="number" step="0.1" min="0" max="20" className="input"
+                value={taxa} onChange={e => setTaxa(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">Dias até vencimento</label>
+              <input
+                type="number" step="1" min="1" className="input"
+                value={dias} onChange={e => setDias(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
         <div className="bg-amber-50 rounded-2xl p-4 mb-4 space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Encargos ({parseFloat(taxa).toFixed(1)}% × {dias}d)</span>
+            <span className="text-gray-500">
+              Encargos{modo === 'RATE_AND_DAYS' ? ` (${parseFloat(taxa || '0').toFixed(1)}% × ${dias}d)` : ''}
+            </span>
             <span className="font-semibold text-amber-700">- {formatarMoeda(encargos)}</span>
           </div>
           <div className="h-px bg-amber-200" />
@@ -162,7 +226,7 @@ export function AnteciparModal({
 
         <button
           onClick={handleAntecipar}
-          disabled={loading}
+          disabled={loading || encargoInvalido}
           className="btn-primary w-full py-3 rounded-2xl text-base"
         >
           <DollarSign size={16} />

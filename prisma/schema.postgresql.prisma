@@ -53,6 +53,9 @@ model NotaFiscal {
   baseCalculo                   Float?
   valorLiquidoAntecipacao       Float?
   valorTotalTributosAntecipacao Float?
+  metodoAntecipacao             String?   // 'DIRECT_FEE' | 'RATE_AND_DAYS'
+  taxaAntecipacao               Float?    // só quando metodoAntecipacao = RATE_AND_DAYS
+  diasAntecipacao               Float?    // só quando metodoAntecipacao = RATE_AND_DAYS
   ir                            Float?
   pisPasep                      Float?
   cofins                        Float?

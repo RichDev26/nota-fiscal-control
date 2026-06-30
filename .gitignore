@@ -25,6 +25,9 @@ prisma/*.db-journal
 public/uploads/*
 !public/uploads/.gitkeep
 
+# logs de auditoria do motor de extração (runtime, não versionar)
+src/lib/extractors/data/auditoria/
+
 # misc
 .DS_Store
 *.pem

@@ -52,6 +52,9 @@ export interface NotaFiscal {
   baseCalculo?: number | null;
   valorLiquidoAntecipacao?: number | null;
   valorTotalTributosAntecipacao?: number | null;
+  metodoAntecipacao?: 'DIRECT_FEE' | 'RATE_AND_DAYS' | null;
+  taxaAntecipacao?: number | null;
+  diasAntecipacao?: number | null;
   ir?: number | null;
   pisPasep?: number | null;
   cofins?: number | null;

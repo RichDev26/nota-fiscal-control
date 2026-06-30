@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 const FLOAT_FIELDS = new Set([
   'valorBruto', 'valorLiquido', 'aliquota', 'valorIss', 'baseCalculo',
   'valorLiquidoAntecipacao', 'valorTotalTributosAntecipacao',
+  'taxaAntecipacao', 'diasAntecipacao',
   'ir', 'pisPasep', 'cofins', 'inss', 'csll', 'outrasRetencoes',
   'valorAproximadoTributos', 'quantidade', 'valorUnitario',
 ]);
@@ -22,6 +23,7 @@ const NOTA_FIELDS = new Set([
   'observacoes', 'arquivoPdfUrl', 'pdfData', 'tags', 'notaSubstitutivaId',
   'valorBruto', 'valorLiquido', 'aliquota', 'valorIss', 'baseCalculo',
   'valorLiquidoAntecipacao', 'valorTotalTributosAntecipacao',
+  'metodoAntecipacao', 'taxaAntecipacao', 'diasAntecipacao',
   'ir', 'pisPasep', 'cofins', 'inss', 'csll', 'outrasRetencoes', 'valorAproximadoTributos',
   'quantidade', 'valorUnitario',
   // datas são tratadas separadamente
