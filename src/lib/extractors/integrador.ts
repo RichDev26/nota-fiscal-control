@@ -18,6 +18,7 @@ import { validateCrossCheck } from './validacao-cruzada';
 import type { ValidacaoCruzadaResult } from './validacao-cruzada';
 import { logInfo, logError, logNegocio } from './logger';
 import { validarDocumento } from '@/lib/validators/documento-fiscal';
+import { parseDateBR } from '@/lib/validators';
 import { inicializarBase } from './base-conhecimento';
 import { inicializarLogs } from './motor-correcoes';
 
@@ -194,9 +195,11 @@ function alertarRetencoesSimples(resultado: PdfExtractResult): PdfExtractResult 
 /** 5.6 — Valida que data do fato gerador não é posterior à data de emissão */
 function validarFatoGerador(resultado: PdfExtractResult): PdfExtractResult {
   if (!resultado.dataFatoGerador || !resultado.dataEmissao) return resultado;
-  const fato    = new Date(resultado.dataFatoGerador);
-  const emissao = new Date(resultado.dataEmissao);
-  if (isNaN(fato.getTime()) || isNaN(emissao.getTime())) return resultado;
+  // Determinístico: a extração entrega "DD/MM/AAAA HH:MM:SS". new Date() lia isso
+  // como MM/DD (invertendo) ou Invalid (pulando silenciosamente a checagem).
+  const fato    = parseDateBR(resultado.dataFatoGerador);
+  const emissao = parseDateBR(resultado.dataEmissao);
+  if (!fato || !emissao) return resultado;
   if (fato > emissao) {
     return {
       ...resultado,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
+import { parseDateBR } from '@/lib/validators';
 
 export const dynamic = 'force-dynamic';
 
@@ -152,11 +153,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       }
     }
 
-    const parseDate = (v: unknown) => {
-      if (!v || v === '' || v === 'null') return null;
-      const d = new Date(v as string);
-      return isNaN(d.getTime()) ? null : d;
-    };
+    // Determinístico (ver parseDateBR): aceita BR "DD/MM/AAAA" e ISO, valida
+    // calendário, nunca usa new Date() sobre string ambígua.
+    const parseDate = (v: unknown) => parseDateBR(typeof v === 'string' ? v : null);
 
     const [nota] = await prisma.$transaction([
       prisma.notaFiscal.update({

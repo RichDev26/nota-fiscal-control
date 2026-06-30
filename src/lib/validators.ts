@@ -60,12 +60,30 @@ export function formatarData(data: string | Date | null | undefined): string {
   return d.toLocaleDateString('pt-BR');
 }
 
-export function parseDateBR(str: string): Date | null {
+/**
+ * Parser de data DETERMINÍSTICO. Nunca usa Date.parse/new Date(string), que
+ * interpreta "09/06/2025" como 6 de setembro (MM/DD) e perde "19/05/2026" como
+ * Invalid Date. Aceita BR "DD/MM/AAAA" (com hora opcional, ex: extração NFS-e
+ * "19/05/2026 12:01:05") e ISO "AAAA-MM-DD" (inputs <input type="date">).
+ * Valida o calendário (31/02 → null) e constrói via Date.UTC para não sofrer
+ * shift de fuso. Retorna null para qualquer entrada que não case ou seja inválida.
+ */
+export function parseDateBR(str: string | null | undefined): Date | null {
   if (!str) return null;
-  const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-  if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}`);
-  const d = new Date(str);
-  return isNaN(d.getTime()) ? null : d;
+  const s = String(str).trim();
+
+  let yyyy: number, mm: number, dd: number;
+  const br  = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);  // DD/MM/AAAA [resto]
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);    // AAAA-MM-DD [resto]
+  if (br)       { dd = +br[1];  mm = +br[2];  yyyy = +br[3]; }
+  else if (iso) { yyyy = +iso[1]; mm = +iso[2]; dd = +iso[3]; }
+  else return null;
+
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || yyyy < 1900) return null;
+  const d = new Date(Date.UTC(yyyy, mm - 1, dd));
+  // Calendário: 31/02 "rola" para março — rejeita.
+  if (d.getUTCFullYear() !== yyyy || d.getUTCMonth() !== mm - 1 || d.getUTCDate() !== dd) return null;
+  return d;
 }
 
 export function formatarAliquota(v: number | null | undefined): string {

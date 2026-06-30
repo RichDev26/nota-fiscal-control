@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { movePdf, getPdf } from '@/lib/pdf-storage';
 import { getSession } from '@/lib/auth';
+import { parseDateBR } from '@/lib/validators';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,12 +144,9 @@ export async function POST(req: NextRequest) {
 
     // Parse dates — notaData is Record<string, unknown>, cast para string
     const str = (v: unknown) => (v && typeof v === 'string' ? v : null);
-    const parseDate = (v: unknown) => {
-      const d = str(v);
-      if (!d) return null;
-      const dt = new Date(d);
-      return isNaN(dt.getTime()) ? null : dt;
-    };
+    // Determinístico: aceita BR "DD/MM/AAAA [HH:MM:SS]" (extração) e ISO (inputs).
+    // Substitui new Date(), que corrompia "09/06/2025"→set/06 e perdia "19/05/2026".
+    const parseDate = (v: unknown) => parseDateBR(str(v));
 
     // 5.4 — Verificar duplicidade ANTES de criar (numeroNf + prestador + dataEmissao)
     const resolvedPrestadorId = prestadorId || (str(notaData.prestadorId) ?? undefined);
