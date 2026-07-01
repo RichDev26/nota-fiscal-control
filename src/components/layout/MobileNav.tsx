@@ -2,14 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FileText, BarChart2, Receipt, PlusCircle, Settings } from 'lucide-react';
+import { LayoutDashboard, FileText, Wallet, PlusCircle, Receipt, Settings } from 'lucide-react';
 
 const links = [
-  { href: '/painel',        label: 'Início',     icon: LayoutDashboard },
-  { href: '/notas',         label: 'Notas',      icon: FileText },
-  { href: '/notas/nova',    label: 'Nova',       icon: PlusCircle, highlight: true },
-  { href: '/impostos',      label: 'Impostos',   icon: Receipt },
-  { href: '/configuracoes', label: 'Config',     icon: Settings },
+  { href: '/painel',        label: 'Início',   icon: LayoutDashboard },
+  { href: '/notas',         label: 'Notas',    icon: FileText },
+  { href: '/notas/nova',    label: 'Nova',     icon: PlusCircle, highlight: true },
+  { href: '/gastos',        label: 'Gastos',   icon: Wallet },
+  { href: '/impostos',      label: 'Impostos', icon: Receipt },
+  { href: '/configuracoes', label: 'Config',   icon: Settings },
 ];
 
 export default function MobileNav() {

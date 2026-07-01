@@ -124,6 +124,23 @@ model HistoricoAlteracao {
   notaFiscal    NotaFiscal @relation(fields: [notaFiscalId], references: [id], onDelete: Cascade)
 }
 
+// ─── Controle de Gastos (MVP) ─────────────────────────────────────────────────
+model Gasto {
+  id             String    @id @default(cuid())
+  descricao      String
+  valor          Float
+  data           DateTime
+  categoria      String?
+  fornecedor     String?
+  formaPagamento String?
+  observacoes    String?
+  anexos         String?   // JSON: [{ url, filename, nome, tipo }] — prep p/ extrator futuro
+  usuarioId      String?
+  usuario        Usuario?  @relation(fields: [usuarioId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
 // ─── FASE 12 — Fila de Processamento de Produção ──────────────────────────────
 
 model JobFila {
@@ -230,4 +247,5 @@ model Usuario {
   atualizadoEm DateTime     @updatedAt
   notas        NotaFiscal[]
   impostos     Imposto[]
+  gastos       Gasto[]
 }

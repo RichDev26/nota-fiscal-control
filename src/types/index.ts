@@ -114,6 +114,37 @@ export interface HistoricoAlteracao {
   dataAcao: string;
 }
 
+// ─── Gastos ─────────────────────────────────────────────────────────────────────
+export interface AnexoGasto {
+  url: string;
+  filename: string;
+  nome: string;
+  tipo?: string;
+}
+
+export interface Gasto {
+  id: string;
+  descricao: string;
+  valor: number;
+  data: string;
+  categoria?: string | null;
+  fornecedor?: string | null;
+  formaPagamento?: string | null;
+  observacoes?: string | null;
+  anexos?: AnexoGasto[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const CATEGORIAS_GASTO = [
+  'Alimentação', 'Transporte', 'Material', 'Serviços',
+  'Equipamentos', 'Combustível', 'Impostos e Taxas', 'Outros',
+];
+
+export const FORMAS_PAGAMENTO = [
+  'Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro', 'Boleto', 'Transferência', 'Outros',
+];
+
 export interface PdfExtractResult {
   nomeOrganizador?: string;
   tipo?: string;
