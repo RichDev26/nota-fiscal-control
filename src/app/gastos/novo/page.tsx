@@ -6,8 +6,9 @@ import {
   Upload, Pencil, ChevronRight, ArrowLeft, X, Loader2, Check,
   FileText, Paperclip, Info, Wallet,
 } from 'lucide-react';
+import { parseDateBR } from '@/lib/validators';
 import { CATEGORIAS_GASTO, FORMAS_PAGAMENTO } from '@/types';
-import type { AnexoGasto } from '@/types';
+import type { AnexoGasto, ProdutoGasto, PdfExtractResult } from '@/types';
 
 type Mode = null | 'upload' | 'manual';
 
@@ -81,7 +82,9 @@ export default function NovoGastoPage() {
 
   const [mode, setMode] = useState<Mode>(null);
   const [step, setStep] = useState(1);
-  const [infoUpload, setInfoUpload] = useState(false);   // banner "extração em breve"
+  const [extraindo, setExtraindo] = useState(false);
+  // Feedback da leitura automática: null = veio manual; ok = extraiu; falha = tentou e não leu
+  const [leitura, setLeitura] = useState<null | { ok: boolean; msg: string }>(null);
 
   // Form
   const [valor, setValor]           = useState('');
@@ -92,6 +95,11 @@ export default function NovoGastoPage() {
   const [formaPagamento, setFormaPag] = useState('');
   const [observacoes, setObs]       = useState('');
   const [anexos, setAnexos]         = useState<AnexoGasto[]>([]);
+  // Dados extraídos do documento (mesmo pipeline das Notas)
+  const [fornecedorCnpj, setFornecedorCnpj]   = useState('');
+  const [numeroDocumento, setNumeroDocumento] = useState('');
+  const [serieDocumento, setSerieDocumento]   = useState('');
+  const [produtos, setProdutos]               = useState<ProdutoGasto[]>([]);
 
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
@@ -99,11 +107,12 @@ export default function NovoGastoPage() {
   const valorNum = parseFloat(valor.replace(/\./g, '').replace(',', '.'));
   const step1Ok = descricao.trim().length > 0 && isFinite(valorNum) && valorNum > 0;
 
-  const goManual = (comBanner = false) => { setInfoUpload(comBanner); setMode('manual'); setStep(1); };
-
+  // ── Upload + extração via o MESMO pipeline das Notas (/api/pdf-extract) ────────
   const handleUploadAdvance = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    // Sem OCR nesta fase: sobe os arquivos e leva pro formulário manual já anexados.
+    setExtraindo(true);
+
+    // 1. Anexa todos os arquivos ao gasto (rota de upload já existente).
     const novos: AnexoGasto[] = [];
     for (const file of Array.from(files)) {
       const fd = new FormData(); fd.append('file', file);
@@ -111,11 +120,63 @@ export default function NovoGastoPage() {
         const r = await fetch('/api/upload', { method: 'POST', body: fd });
         const d = await r.json();
         if (r.ok) novos.push({ url: d.url, filename: d.filename, nome: file.name, tipo: file.type });
-      } catch { /* ignora */ }
+      } catch { /* ignora arquivo com falha */ }
     }
     setAnexos(novos);
-    goManual(true);
+
+    // 2. Extrai do primeiro PDF usando EXATAMENTE o extrator das Notas.
+    const pdf = Array.from(files).find(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    if (!pdf) {
+      setLeitura({ ok: false, msg: 'Nenhum PDF para leitura automática — preencha os dados abaixo.' });
+      setExtraindo(false); setMode('manual'); setStep(1); return;
+    }
+
+    try {
+      const fd = new FormData(); fd.append('file', pdf);
+      const r = await fetch('/api/pdf-extract', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) {
+        setLeitura({ ok: false, msg: d.error || 'Não foi possível ler o documento automaticamente — preencha manualmente.' });
+      } else {
+        const n = aplicarExtracao(d);
+        setLeitura({ ok: true, msg: `Leitura automática concluída — ${n} campo(s) preenchido(s). Confira antes de salvar.` });
+      }
+    } catch {
+      setLeitura({ ok: false, msg: 'Falha na leitura automática — preencha os dados manualmente.' });
+    } finally {
+      setExtraindo(false); setMode('manual'); setStep(1);
+    }
   };
+
+  // Mapeia o PdfExtractResult (NFS-e) → campos do Gasto. Reutiliza o resultado do
+  // pipeline existente; não interpreta o PDF por conta própria.
+  function aplicarExtracao(d: PdfExtractResult): number {
+    let n = 0;
+    const forn = d.prestador?.nomeRazaoSocial || d.prestador?.nomeFantasia;
+    if (forn)                { setFornecedor(forn); n++; }
+    if (d.prestador?.cpfCnpj){ setFornecedorCnpj(d.prestador.cpfCnpj); n++; }
+    if (d.numeroNf)          { setNumeroDocumento(String(d.numeroNf)); n++; }
+    if (d.valorBruto != null){ setValor(d.valorBruto.toFixed(2).replace('.', ',')); n++; }
+    if (d.dataEmissao) {
+      const dt = parseDateBR(d.dataEmissao);
+      if (dt) { setData(dt.toISOString().split('T')[0]); n++; }
+    }
+    if (d.descricao) { setDescricao(d.descricao); n++; }
+    else if (forn)   { setDescricao(`Compra — ${forn}`); }
+
+    // Produtos: o extrator NFS-e atual entrega no máximo 1 linha de serviço.
+    // Estrutura já preparada para a lista de produtos do DANFE (próxima fase).
+    if (d.descricao || d.valorUnitario != null || d.quantidade != null) {
+      setProdutos([{
+        descricao:     d.descricao ?? null,
+        quantidade:    d.quantidade ?? null,
+        unidade:       null,
+        valorUnitario: d.valorUnitario ?? null,
+        valorTotal:    d.valorBruto ?? null,
+      }]);
+    }
+    return n;
+  }
 
   const handleSave = async () => {
     if (!step1Ok) return;
@@ -123,7 +184,10 @@ export default function NovoGastoPage() {
     try {
       const r = await fetch('/api/gastos', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor: valorNum, descricao, data, categoria, fornecedor, formaPagamento, observacoes, anexos }),
+        body: JSON.stringify({
+          valor: valorNum, descricao, data, categoria, fornecedor, formaPagamento, observacoes, anexos,
+          fornecedorCnpj, numeroDocumento, serieDocumento, produtos,
+        }),
       });
       if (!r.ok) { const d = await r.json(); setError(d.error || 'Erro ao salvar.'); return; }
       router.push('/gastos');
@@ -179,24 +243,34 @@ export default function NovoGastoPage() {
   // ── Modo Upload ──────────────────────────────────────────────────────────────
   if (mode === 'upload') {
     return (
-      <Shell onBack={() => setMode(null)}>
+      <Shell onBack={extraindo ? undefined : () => setMode(null)}>
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Carregar documentos</h1>
           <p className="text-gray-400 mt-1 text-sm">Nota fiscal, cupom, comprovante — pode anexar vários</p>
         </div>
         <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
           onChange={e => handleUploadAdvance(e.target.files)} />
-        <div onClick={() => fileRef.current?.click()}
-          className="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center cursor-pointer hover:border-blue-300 hover:bg-gray-50 transition-all mb-4">
-          <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-            <Upload size={24} className="text-gray-400" />
+
+        {extraindo ? (
+          <div className="border-2 border-dashed border-blue-200 bg-blue-50/40 rounded-2xl p-10 text-center mb-4">
+            <Loader2 size={28} className="text-blue-500 animate-spin mx-auto mb-3" />
+            <p className="font-semibold text-gray-700">Lendo o documento...</p>
+            <p className="text-sm text-gray-400 mt-0.5">Extraindo os dados automaticamente</p>
           </div>
-          <p className="font-semibold text-gray-600">Clique para selecionar os arquivos</p>
-          <p className="text-sm text-gray-400 mt-0.5">PDF, JPG ou PNG</p>
-        </div>
+        ) : (
+          <div onClick={() => fileRef.current?.click()}
+            className="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center cursor-pointer hover:border-blue-300 hover:bg-gray-50 transition-all mb-4">
+            <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <Upload size={24} className="text-gray-400" />
+            </div>
+            <p className="font-semibold text-gray-600">Clique para selecionar os arquivos</p>
+            <p className="text-sm text-gray-400 mt-0.5">PDF, JPG ou PNG</p>
+          </div>
+        )}
+
         <div className="flex items-start gap-2 bg-blue-50 text-blue-700 rounded-xl p-3 text-xs">
           <Info size={14} className="shrink-0 mt-0.5" />
-          A leitura automática dos documentos chega na próxima etapa. Por enquanto, os arquivos ficam anexados e você preenche os dados manualmente.
+          O sistema lê o PDF com o mesmo motor das Notas Fiscais e preenche os campos automaticamente. Você confere e ajusta antes de salvar.
         </div>
       </Shell>
     );
@@ -216,10 +290,12 @@ export default function NovoGastoPage() {
           <p className="text-gray-400 text-sm">Etapa 1 de 2 · o essencial</p>
         </div>
 
-        {infoUpload && anexos.length > 0 && (
-          <div className="flex items-start gap-2 bg-blue-50 text-blue-700 rounded-xl p-3 text-xs mb-4">
-            <Info size={14} className="shrink-0 mt-0.5" />
-            {anexos.length} documento(s) anexado(s). Preencha os dados do gasto abaixo.
+        {leitura && (
+          <div className={`flex items-start gap-2 rounded-xl p-3 text-xs mb-4 ${
+            leitura.ok ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+          }`}>
+            {leitura.ok ? <Check size={14} className="shrink-0 mt-0.5" /> : <Info size={14} className="shrink-0 mt-0.5" />}
+            {leitura.msg}
           </div>
         )}
 
@@ -289,6 +365,34 @@ export default function NovoGastoPage() {
           <label className="label">Observações</label>
           <input type="text" className="input" placeholder="Opcional" value={observacoes} onChange={e => setObs(e.target.value)} />
         </div>
+
+        {/* Dados do documento — aparecem quando houve leitura automática */}
+        {(leitura || numeroDocumento || serieDocumento || fornecedorCnpj) && (
+          <div className="border-t border-gray-100 pt-4 space-y-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Dados do documento</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Nº do documento</label>
+                <input type="text" className="input" placeholder="—" value={numeroDocumento} onChange={e => setNumeroDocumento(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Série</label>
+                <input type="text" className="input" placeholder="—" value={serieDocumento} onChange={e => setSerieDocumento(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <label className="label">CNPJ do fornecedor</label>
+              <input type="text" className="input" placeholder="—" value={fornecedorCnpj} onChange={e => setFornecedorCnpj(e.target.value)} />
+            </div>
+            {produtos.length > 0 && (
+              <div className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2.5 text-xs text-gray-500">
+                <FileText size={14} className="text-gray-400" />
+                {produtos.length} item(ns) extraído(s) do documento — salvos junto ao gasto.
+              </div>
+            )}
+          </div>
+        )}
+
         <div>
           <label className="label">Anexos</label>
           <AnexosField anexos={anexos} setAnexos={setAnexos} />

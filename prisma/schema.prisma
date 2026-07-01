@@ -135,6 +135,11 @@ model Gasto {
   formaPagamento String?
   observacoes    String?
   anexos         String?   // JSON: [{ url, filename, nome, tipo }] — prep p/ extrator futuro
+  // ── Dados extraídos do documento (mesmo pipeline das Notas) ──
+  fornecedorCnpj  String?
+  numeroDocumento String?
+  serieDocumento  String?
+  produtos        String?  // JSON: [{ descricao, quantidade, unidade, valorUnitario, valorTotal }]
   usuarioId      String?
   usuario        Usuario?  @relation(fields: [usuarioId], references: [id])
   createdAt      DateTime  @default(now())

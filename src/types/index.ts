@@ -122,6 +122,15 @@ export interface AnexoGasto {
   tipo?: string;
 }
 
+// Item de produto/serviço extraído do documento (mesmo pipeline das Notas).
+export interface ProdutoGasto {
+  descricao?: string | null;
+  quantidade?: number | null;
+  unidade?: string | null;
+  valorUnitario?: number | null;
+  valorTotal?: number | null;
+}
+
 export interface Gasto {
   id: string;
   descricao: string;
@@ -132,6 +141,11 @@ export interface Gasto {
   formaPagamento?: string | null;
   observacoes?: string | null;
   anexos?: AnexoGasto[] | null;
+  // Dados extraídos do documento
+  fornecedorCnpj?: string | null;
+  numeroDocumento?: string | null;
+  serieDocumento?: string | null;
+  produtos?: ProdutoGasto[] | null;
   createdAt: string;
   updatedAt: string;
 }

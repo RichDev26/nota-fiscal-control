@@ -35,7 +35,11 @@ export async function GET(req: NextRequest) {
     }
 
     const gastos = await prisma.gasto.findMany({ where, orderBy: { data: 'desc' } });
-    const parsed = gastos.map(g => ({ ...g, anexos: g.anexos ? JSON.parse(g.anexos) : [] }));
+    const parsed = gastos.map(g => ({
+      ...g,
+      anexos:   g.anexos   ? JSON.parse(g.anexos)   : [],
+      produtos: g.produtos ? JSON.parse(g.produtos) : [],
+    }));
 
     return NextResponse.json(parsed);
   } catch (err) {
@@ -71,11 +75,19 @@ export async function POST(req: NextRequest) {
         formaPagamento: body.formaPagamento  || null,
         observacoes:    body.observacoes     || null,
         anexos:         Array.isArray(body.anexos) && body.anexos.length ? JSON.stringify(body.anexos) : null,
+        fornecedorCnpj:  body.fornecedorCnpj  || null,
+        numeroDocumento: body.numeroDocumento || null,
+        serieDocumento:  body.serieDocumento  || null,
+        produtos:        Array.isArray(body.produtos) && body.produtos.length ? JSON.stringify(body.produtos) : null,
         usuarioId:      session.sub,
       },
     });
 
-    return NextResponse.json({ ...gasto, anexos: gasto.anexos ? JSON.parse(gasto.anexos) : [] }, { status: 201 });
+    return NextResponse.json({
+      ...gasto,
+      anexos:   gasto.anexos   ? JSON.parse(gasto.anexos)   : [],
+      produtos: gasto.produtos ? JSON.parse(gasto.produtos) : [],
+    }, { status: 201 });
   } catch (err) {
     console.error('[POST /api/gastos]', err);
     return NextResponse.json({ error: 'Erro ao criar gasto' }, { status: 500 });
