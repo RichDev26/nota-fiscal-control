@@ -205,6 +205,10 @@ export interface PdfExtractResult {
   valorAproximadoTributosEstadual?: number;
   valorAproximadoTributosMunicipal?: number;
   simplesNacional?: boolean;
+  // ── DANFE / documentos com tabela de produtos (aditivo — NFS-e não preenche) ──
+  serie?: string;
+  produtos?: ProdutoGasto[];
+  camposConfianca?: Record<string, number>;  // score por campo (0–100)
   // Qualidade e validação
   camposNaoEncontrados?: string[];
   camposBaixaConfianca?: string[];

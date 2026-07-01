@@ -156,6 +156,7 @@ export default function NovoGastoPage() {
     if (forn)                { setFornecedor(forn); n++; }
     if (d.prestador?.cpfCnpj){ setFornecedorCnpj(d.prestador.cpfCnpj); n++; }
     if (d.numeroNf)          { setNumeroDocumento(String(d.numeroNf)); n++; }
+    if (d.serie)             { setSerieDocumento(String(d.serie)); n++; }
     if (d.valorBruto != null){ setValor(d.valorBruto.toFixed(2).replace('.', ',')); n++; }
     if (d.dataEmissao) {
       const dt = parseDateBR(d.dataEmissao);
@@ -164,9 +165,11 @@ export default function NovoGastoPage() {
     if (d.descricao) { setDescricao(d.descricao); n++; }
     else if (forn)   { setDescricao(`Compra — ${forn}`); }
 
-    // Produtos: o extrator NFS-e atual entrega no máximo 1 linha de serviço.
-    // Estrutura já preparada para a lista de produtos do DANFE (próxima fase).
-    if (d.descricao || d.valorUnitario != null || d.quantidade != null) {
+    // Produtos: DANFE traz a lista completa (d.produtos); NFS-e traz no máximo
+    // uma linha de serviço (reconstruída dos campos simples).
+    if (Array.isArray(d.produtos) && d.produtos.length) {
+      setProdutos(d.produtos);
+    } else if (d.descricao || d.valorUnitario != null || d.quantidade != null) {
       setProdutos([{
         descricao:     d.descricao ?? null,
         quantidade:    d.quantidade ?? null,

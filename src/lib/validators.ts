@@ -90,3 +90,16 @@ export function formatarAliquota(v: number | null | undefined): string {
   if (v == null) return '—';
   return `${v.toFixed(2)}%`;
 }
+
+/**
+ * Parser numérico BR canônico (dinheiro, quantidades, valores unitários).
+ * "R$ 1.092,34" | "1.092,34" | "12,0000" | "81,666670" → number, SEM arredondar
+ * (preserva casas de valores unitários). Use para TODO valor numérico extraído.
+ */
+export function parseNumeroBR(v: string | null | undefined): number | null {
+  if (v == null) return null;
+  const s = String(v).replace(/R\$\s*/gi, '').replace(/\s/g, '').trim();
+  if (!s) return null;
+  const n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  return isNaN(n) ? null : n;
+}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
-import { extractFromPdfBuffer, NotaCanceladaError } from '@/lib/extractors/integrador';
+import { extractDocumentFromPdfBuffer, NotaCanceladaError } from '@/lib/extractors/extrator-router';
 import { checkRateLimit } from '@/lib/rate-limiter';
 import { savePdf, generateTempId } from '@/lib/pdf-storage';
 
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     const tempId   = generateTempId();
     savePdf(buffer, tempId);
 
-    const result = await extractFromPdfBuffer(buffer);
+    const result = await extractDocumentFromPdfBuffer(buffer);
 
     return NextResponse.json({
       ...result,
