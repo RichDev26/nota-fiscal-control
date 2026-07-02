@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, FileText, BarChart2, Receipt, Wallet, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, FileText, BarChart2, Receipt, Wallet, Settings, LogOut, UserCheck } from 'lucide-react';
 import { useSession } from '@/context/SessionContext';
 
 const links = [
   { href: '/painel',     label: 'Dashboard',  icon: LayoutDashboard },
   { href: '/notas',      label: 'Notas',       icon: FileText },
   { href: '/gastos',     label: 'Gastos',      icon: Wallet },
+  { href: '/integracao', label: 'Integração',  icon: UserCheck },
   { href: '/relatorios', label: 'Relatórios',  icon: BarChart2 },
   { href: '/impostos',   label: 'Impostos',    icon: Receipt },
 ];

@@ -5,6 +5,9 @@ const nextConfig = {
   // Next.js 14: pacotes server-only (não bundlados pelo webpack)
   experimental: {
     serverComponentsExternalPackages: ['pdf-parse', '@prisma/client', 'prisma', '@anthropic-ai/sdk'],
+    // Next 14.x exige essa flag para rodar src/instrumentation.ts (estabilizado por padrão só na v15) —
+    // é o boot do sweep de notificações do Controle de Integração.
+    instrumentationHook: true,
   },
 
   webpack: (config, { isServer }) => {

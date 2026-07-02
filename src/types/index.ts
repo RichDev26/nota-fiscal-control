@@ -192,6 +192,41 @@ export const STATUS_SERVICO_COLORS: Record<string, string> = {
   concluido: 'bg-green-100 text-green-700',
 };
 
+// ─── Controle de Integração ─────────────────────────────────────────────────────
+export type TipoDocumentoColaborador = 'INTEGRACAO' | 'ASO';
+
+export interface DocumentoColaborador {
+  id: string;
+  tipo: TipoDocumentoColaborador;
+  dataInicio: string;
+  dataFim: string;
+  // Calculados a partir da data — nunca armazenados (mesmo padrão de calcularServico).
+  status: 'em_dia' | 'proximo_vencimento' | 'vencido';
+  diasRestantes: number;
+}
+
+export interface Colaborador {
+  id: string;
+  nome: string;
+  documentos: DocumentoColaborador[];
+  statusGeral: 'em_dia' | 'proximo_vencimento' | 'vencido';
+  statusLabel: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const STATUS_DOCUMENTO_LABELS: Record<string, string> = {
+  em_dia: 'Em dia',
+  proximo_vencimento: 'Próximo do vencimento',
+  vencido: 'Vencido',
+};
+
+export const STATUS_DOCUMENTO_COLORS: Record<string, string> = {
+  em_dia: 'bg-green-100 text-green-700',
+  proximo_vencimento: 'bg-amber-100 text-amber-700',
+  vencido: 'bg-red-100 text-red-700',
+};
+
 export interface PdfExtractResult {
   nomeOrganizador?: string;
   tipo?: string;

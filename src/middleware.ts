@@ -15,11 +15,16 @@ import { getSessionFromRequest, signToken, setSessionCookie, COOKIE_NAME } from 
 const PUBLIC_PAGE_PREFIXES = ['/auth', '/landing'];
 const PUBLIC_PAGE_EXACT    = ['/'];
 const PUBLIC_API_PREFIXES  = ['/api/auth/'];
+// Match exato (não prefixo) — endpoints internos, chamados pelo próprio servidor
+// (sem cookie de sessão) e protegidos por segredo compartilhado na própria rota,
+// não por login de usuário. Não usar prefixo aqui: expor um path exato apenas.
+const PUBLIC_API_EXACT = ['/api/colaboradores/sweep'];
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PAGE_EXACT.includes(pathname))                    return true;
   if (PUBLIC_PAGE_PREFIXES.some(p => pathname.startsWith(p))) return true;
   if (PUBLIC_API_PREFIXES.some(p => pathname.startsWith(p)))  return true;
+  if (PUBLIC_API_EXACT.includes(pathname))                     return true;
   return false;
 }
 
