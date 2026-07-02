@@ -23,10 +23,14 @@ function Toast({ msg, type, onClose }: { msg: string; type: 'success' | 'error';
 }
 
 // ─── Períodos ───────────────────────────────────────────────────────────────────
-type Periodo = 'mes' | 'hoje' | 'custom';
+// 'todos' é o padrão: um gasto lançado a partir de um documento usa a data real
+// de emissão (quase sempre fora do mês corrente) e não pode ficar escondido da
+// lista por causa de um filtro implícito — o usuário só restringe se quiser.
+type Periodo = 'todos' | 'mes' | 'hoje' | 'custom';
 function rangeFor(p: Periodo, custom: { ini: string; fim: string }): { dataInicio: string; dataFim: string } {
   const now = new Date();
   const iso = (d: Date) => d.toISOString().split('T')[0];
+  if (p === 'todos') return { dataInicio: '', dataFim: '' };
   if (p === 'hoje') return { dataInicio: iso(now), dataFim: iso(now) };
   if (p === 'mes') {
     return {
@@ -42,7 +46,7 @@ export default function GastosPage() {
   const [gastos, setGastos]   = useState<Gasto[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca]     = useState('');
-  const [periodo, setPeriodo] = useState<Periodo>('mes');
+  const [periodo, setPeriodo] = useState<Periodo>('todos');
   const [custom, setCustom]   = useState({ ini: '', fim: '' });
   const [toast, setToast]     = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
@@ -124,7 +128,7 @@ export default function GastosPage() {
 
       {/* Filtros de período */}
       <div className="flex items-center gap-2 flex-wrap">
-        {([['mes', 'Este mês'], ['hoje', 'Hoje'], ['custom', 'Período']] as const).map(([v, label]) => (
+        {([['todos', 'Todos'], ['mes', 'Este mês'], ['hoje', 'Hoje'], ['custom', 'Período']] as const).map(([v, label]) => (
           <button
             key={v}
             onClick={() => setPeriodo(v)}
