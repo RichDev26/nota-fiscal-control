@@ -1,19 +1,15 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import Sidebar    from './Sidebar';
-import MobileNav  from './MobileNav';
+import MobileNav from './MobileNav';
 import { SessionProvider } from '@/context/SessionContext';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isPublicRoute = pathname.startsWith('/auth') || pathname === '/';
-  // Home é autenticada mas fullscreen — sem sidebar nem nav
   const isFullscreen  = pathname === '/home';
 
-  if (isPublicRoute) {
-    return <>{children}</>;
-  }
+  if (isPublicRoute) return <>{children}</>;
 
   if (isFullscreen) {
     return (
@@ -25,11 +21,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SessionProvider>
-      <div className="flex h-dvh overflow-hidden bg-[#F4F6FB]">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
-          {children}
-        </main>
+      {/* pb-24 garante que o conteúdo nunca fica atrás da nav flutuante */}
+      <div className="min-h-dvh bg-[#F4F6FB] pb-24">
+        {children}
       </div>
       <MobileNav />
     </SessionProvider>
