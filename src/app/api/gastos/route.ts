@@ -63,6 +63,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Descrição e valor são obrigatórios.' }, { status: 400 });
     }
 
+    // Todo gasto pertence obrigatoriamente a um serviço em andamento.
+    const servicoId = body.servicoId ? String(body.servicoId) : null;
+    if (!servicoId) {
+      return NextResponse.json({ error: 'Selecione um serviço para este gasto.' }, { status: 400 });
+    }
+    const servico = await prisma.servico.findUnique({ where: { id: servicoId } });
+    if (!servico || (servico.usuarioId && servico.usuarioId !== session.sub)) {
+      return NextResponse.json({ error: 'Serviço inválido.' }, { status: 400 });
+    }
+    if (servico.status === 'concluido') {
+      return NextResponse.json({ error: 'Este serviço já foi concluído e não aceita novos gastos.' }, { status: 400 });
+    }
+
     const data = parseDateBR(body.data) ?? new Date();
 
     const gasto = await prisma.gasto.create({
@@ -79,6 +92,7 @@ export async function POST(req: NextRequest) {
         numeroDocumento: body.numeroDocumento || null,
         serieDocumento:  body.serieDocumento  || null,
         produtos:        Array.isArray(body.produtos) && body.produtos.length ? JSON.stringify(body.produtos) : null,
+        servicoId,
         usuarioId:      session.sub,
       },
     });

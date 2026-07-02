@@ -2,26 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   ArrowLeft, Wallet, Loader2, Trash2, Edit3, Check, X,
-  FileText, Tag, Calendar, CreditCard, Building2, AlertCircle, Hash,
+  FileText, Tag, Calendar, CreditCard, Building2, AlertCircle, Hash, Briefcase,
 } from 'lucide-react';
 import { formatarMoeda, formatarData } from '@/lib/validators';
 import { CATEGORIAS_GASTO, FORMAS_PAGAMENTO } from '@/types';
 import type { Gasto } from '@/types';
 
-function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
-  return (
+function InfoRow({ icon: Icon, label, value, href }: { icon: React.ElementType; label: string; value: string; href?: string }) {
+  const content = (
     <div className="flex items-center gap-3 py-2.5">
       <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center shrink-0">
         <Icon size={15} className="text-gray-400" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[11px] text-gray-400 font-medium">{label}</p>
-        <p className="text-sm font-semibold text-gray-800 truncate">{value}</p>
+        <p className={`text-sm font-semibold truncate ${href ? 'text-blue-600' : 'text-gray-800'}`}>{value}</p>
       </div>
     </div>
   );
+  return href ? <Link href={href}>{content}</Link> : content;
 }
 
 export default function GastoDetailPage({ params }: { params: { id: string } }) {
@@ -156,6 +158,9 @@ export default function GastoDetailPage({ params }: { params: { id: string } }) 
               </div>
             </div>
             <div className="divide-y divide-gray-50">
+              {gasto.servico && (
+                <InfoRow icon={Briefcase} label="Serviço" value={gasto.servico.nome} href={`/gastos/servicos/${gasto.servico.id}`} />
+              )}
               <InfoRow icon={Calendar} label="Data" value={formatarData(gasto.data)} />
               {gasto.categoria     && <InfoRow icon={Tag}        label="Categoria"  value={gasto.categoria} />}
               {gasto.fornecedor    && <InfoRow icon={Building2}  label="Fornecedor" value={gasto.fornecedor} />}

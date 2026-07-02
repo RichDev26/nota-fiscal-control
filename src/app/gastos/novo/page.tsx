@@ -1,32 +1,18 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useRef, useCallback, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Upload, Pencil, ChevronRight, ArrowLeft, X, Loader2, Check,
-  FileText, Paperclip, Info, Wallet,
+  Upload, Pencil, ChevronRight, X, Loader2, Check,
+  FileText, Paperclip, Info, Wallet, Briefcase, PlusCircle, AlertCircle,
 } from 'lucide-react';
-import { parseDateBR } from '@/lib/validators';
+import { formatarMoeda, parseDateBR } from '@/lib/validators';
+import { Shell } from '@/components/gastos/WizardShell';
+import { ServicoWizard } from '@/components/gastos/ServicoWizard';
 import { CATEGORIAS_GASTO, FORMAS_PAGAMENTO } from '@/types';
-import type { AnexoGasto, ProdutoGasto, PdfExtractResult } from '@/types';
+import type { AnexoGasto, ProdutoGasto, PdfExtractResult, Servico } from '@/types';
 
 type Mode = null | 'upload' | 'manual';
-
-// ─── Wrapper centrado (padrão de nova nota) ───────────────────────────────────
-function Shell({ children, onBack }: { children: React.ReactNode; onBack?: () => void }) {
-  return (
-    <div className="min-h-full flex flex-col items-center justify-center p-5 py-10">
-      {onBack && (
-        <div className="w-full max-w-md mb-4">
-          <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 font-semibold transition-colors">
-            <ArrowLeft size={14} /> Voltar
-          </button>
-        </div>
-      )}
-      <div className="w-full max-w-md animate-enter">{children}</div>
-    </div>
-  );
-}
 
 // ─── Uploader de anexos (reusa POST /api/upload existente) ─────────────────────
 function AnexosField({ anexos, setAnexos }: { anexos: AnexoGasto[]; setAnexos: (a: AnexoGasto[]) => void }) {
@@ -76,15 +62,41 @@ function AnexosField({ anexos, setAnexos }: { anexos: AnexoGasto[]; setAnexos: (
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-export default function NovoGastoPage() {
+function NovoGastoContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Todo gasto pertence obrigatoriamente a um serviço em andamento.
+  const [servicoId, setServicoId]     = useState<string | null>(null);
+  const [servicoNome, setServicoNome] = useState('');
+  const [servicos, setServicos]       = useState<Servico[]>([]);
+  const [loadingServicos, setLoadingServicos] = useState(true);
+  const [showNovoServico, setShowNovoServico] = useState(false);
 
   const [mode, setMode] = useState<Mode>(null);
   const [step, setStep] = useState(1);
   const [extraindo, setExtraindo] = useState(false);
   // Feedback da leitura automática: null = veio manual; ok = extraiu; falha = tentou e não leu
   const [leitura, setLeitura] = useState<null | { ok: boolean; msg: string }>(null);
+
+  // Carrega serviços em andamento; se veio de /gastos/servicos/[id] (?servico=ID),
+  // pré-seleciona direto — usuário não precisa escolher de novo.
+  useEffect(() => {
+    (async () => {
+      const r = await fetch('/api/servicos?status=em_andamento');
+      const d = await r.json();
+      const lista: Servico[] = Array.isArray(d) ? d : [];
+      setServicos(lista);
+      const preId = searchParams.get('servico');
+      if (preId) {
+        const pre = lista.find(s => s.id === preId);
+        if (pre) { setServicoId(pre.id); setServicoNome(pre.nome); }
+      }
+      setLoadingServicos(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Form
   const [valor, setValor]           = useState('');
@@ -190,6 +202,7 @@ export default function NovoGastoPage() {
         body: JSON.stringify({
           valor: valorNum, descricao, data, categoria, fornecedor, formaPagamento, observacoes, anexos,
           fornecedorCnpj, numeroDocumento, serieDocumento, produtos,
+          servicoId,
         }),
       });
       const d = await r.json();
@@ -202,12 +215,65 @@ export default function NovoGastoPage() {
     finally { setSaving(false); }
   };
 
+  // ── Etapa 0 — Selecionar Serviço (obrigatório antes de tudo) ──────────────────
+  if (!servicoId) {
+    if (showNovoServico) {
+      return (
+        <ServicoWizard
+          onCreated={s => { setServicoId(s.id); setServicoNome(s.nome); setShowNovoServico(false); }}
+          onCancel={() => setShowNovoServico(false)}
+        />
+      );
+    }
+    return (
+      <Shell onBack={() => router.push('/gastos')}>
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <Briefcase size={24} className="text-purple-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Selecionar Serviço</h1>
+          <p className="text-gray-400 mt-1 text-sm">Todo gasto pertence a um serviço em andamento</p>
+        </div>
+
+        {loadingServicos ? (
+          <div className="flex justify-center py-10"><Loader2 size={24} className="animate-spin text-blue-400" /></div>
+        ) : servicos.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="font-semibold text-gray-600">Nenhum serviço em andamento</p>
+            <p className="text-sm text-gray-400 mt-0.5 mb-2">Crie um serviço para começar a lançar gastos</p>
+          </div>
+        ) : (
+          <div className="space-y-2 mb-4">
+            {servicos.map(s => (
+              <button key={s.id} onClick={() => { setServicoId(s.id); setServicoNome(s.nome); }}
+                className="w-full text-left p-4 bg-white rounded-2xl border-2 border-gray-100 hover:border-blue-300 hover:bg-blue-50/30 transition-all flex items-center justify-between gap-3 active:scale-[0.98]">
+                <div className="min-w-0">
+                  <p className="font-bold text-gray-900 truncate">{s.nome}</p>
+                  <p className="text-xs text-gray-400">{s.quantidadeGastos} gasto{s.quantidadeGastos !== 1 ? 's' : ''} · {formatarMoeda(s.valorContratado)} contratado</p>
+                </div>
+                <ChevronRight size={18} className="text-gray-300 shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button onClick={() => setShowNovoServico(true)}
+          className="btn-secondary w-full justify-center py-3.5 rounded-2xl text-sm">
+          <PlusCircle size={16} /> Criar novo serviço
+        </button>
+      </Shell>
+    );
+  }
+
   // ── Seleção de modo ──────────────────────────────────────────────────────────
   if (mode === null) {
     return (
-      <Shell>
+      <Shell onBack={() => setServicoId(null)}>
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Novo Gasto</h1>
+          <p className="text-gray-400 mt-1 text-sm flex items-center justify-center gap-1.5">
+            <Briefcase size={13} className="text-purple-500" /> {servicoNome}
+          </p>
           <p className="text-gray-400 mt-2">Como deseja registrar?</p>
         </div>
         <div className="space-y-3">
@@ -337,7 +403,7 @@ export default function NovoGastoPage() {
 
       {error && (
         <div className="flex items-center gap-2 bg-red-50 text-red-700 rounded-xl p-3 text-sm mb-4">
-          <X size={14} />{error}
+          <AlertCircle size={14} />{error}
         </div>
       )}
 
@@ -412,5 +478,13 @@ export default function NovoGastoPage() {
         {saving ? 'Salvando...' : 'Salvar Gasto'}
       </button>
     </Shell>
+  );
+}
+
+export default function NovoGastoPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-20"><Loader2 size={24} className="animate-spin text-blue-400" /></div>}>
+      <NovoGastoContent />
+    </Suspense>
   );
 }

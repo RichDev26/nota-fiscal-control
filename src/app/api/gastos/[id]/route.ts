@@ -6,7 +6,10 @@ import { parseDateBR } from '@/lib/validators';
 export const dynamic = 'force-dynamic';
 
 async function ownedGasto(id: string, userId: string) {
-  const g = await prisma.gasto.findUnique({ where: { id } });
+  const g = await prisma.gasto.findUnique({
+    where: { id },
+    include: { servico: { select: { id: true, nome: true, status: true } } },
+  });
   if (!g) return { error: NextResponse.json({ error: 'Gasto não encontrado' }, { status: 404 }) };
   if (g.usuarioId && g.usuarioId !== userId)
     return { error: NextResponse.json({ error: 'Acesso negado' }, { status: 403 }) };
@@ -58,7 +61,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       if (isFinite(v) && v > 0) data.valor = v;
     }
 
-    const gasto = await prisma.gasto.update({ where: { id: params.id }, data });
+    const gasto = await prisma.gasto.update({
+      where: { id: params.id },
+      data,
+      include: { servico: { select: { id: true, nome: true, status: true } } },
+    });
     return NextResponse.json({
       ...gasto,
       anexos:   gasto.anexos   ? JSON.parse(gasto.anexos)   : [],

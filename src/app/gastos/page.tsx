@@ -3,10 +3,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  Wallet, PlusCircle, Search, Trash2, Eye, Loader2,
-  AlertCircle, CheckCircle, BarChart2, Tag,
+  Wallet, PlusCircle, Search, Loader2,
+  AlertCircle, CheckCircle, BarChart2,
 } from 'lucide-react';
-import { formatarMoeda, formatarData } from '@/lib/validators';
+import { formatarMoeda } from '@/lib/validators';
+import { GastoListItem } from '@/components/gastos/GastoListItem';
+import { ServicosPanel } from '@/components/gastos/ServicosPanel';
 import type { Gasto } from '@/types';
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
@@ -77,9 +79,11 @@ export default function GastosPage() {
   const total = gastos.reduce((s, g) => s + (g.valor || 0), 0);
 
   return (
-    <div className="p-5 md:p-8 max-w-2xl mx-auto space-y-5">
+    <div className="p-5 md:p-8 max-w-5xl mx-auto">
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
 
+      <div className="lg:grid lg:grid-cols-[1fr_300px] lg:gap-6 lg:items-start">
+      <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between pt-2">
         <div className="flex items-center gap-3">
@@ -173,36 +177,15 @@ export default function GastosPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {gastos.map(g => (
-            <div key={g.id} className="card overflow-hidden">
-              <Link href={`/gastos/${g.id}`} className="block p-4 hover:bg-gray-50/50 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 truncate text-[15px]">{g.descricao}</p>
-                    <p className="text-sm text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                      <span>{formatarData(g.data)}</span>
-                      {g.categoria && <><span>·</span><span className="flex items-center gap-1"><Tag size={11} />{g.categoria}</span></>}
-                      {g.fornecedor && <><span>·</span><span className="truncate">{g.fornecedor}</span></>}
-                    </p>
-                  </div>
-                  <p className="font-bold text-gray-900 text-[15px] shrink-0">{formatarMoeda(g.valor)}</p>
-                </div>
-              </Link>
-              <div className="flex items-center gap-2 px-4 pb-3 pt-0">
-                <Link href={`/gastos/${g.id}`} className="btn-ghost btn-sm py-1.5 flex items-center gap-1 text-gray-500">
-                  <Eye size={13} /> Ver
-                </Link>
-                {g.anexos && g.anexos.length > 0 && (
-                  <span className="text-xs text-gray-400">{g.anexos.length} anexo{g.anexos.length !== 1 ? 's' : ''}</span>
-                )}
-                <button onClick={() => handleDelete(g)} className="btn-ghost btn-sm py-1.5 text-red-400 hover:text-red-600 ml-auto">
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            </div>
-          ))}
+          {gastos.map(g => <GastoListItem key={g.id} gasto={g} onDelete={handleDelete} />)}
         </div>
       )}
+      </div>
+
+      <div className="mt-5 lg:mt-0">
+        <ServicosPanel />
+      </div>
+      </div>
     </div>
   );
 }

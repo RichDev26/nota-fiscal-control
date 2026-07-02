@@ -146,6 +146,8 @@ export interface Gasto {
   numeroDocumento?: string | null;
   serieDocumento?: string | null;
   produtos?: ProdutoGasto[] | null;
+  servicoId?: string | null;
+  servico?: { id: string; nome: string; status: StatusServico } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -158,6 +160,33 @@ export const CATEGORIAS_GASTO = [
 export const FORMAS_PAGAMENTO = [
   'Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro', 'Boleto', 'Transferência', 'Outros',
 ];
+
+// ─── Serviços ───────────────────────────────────────────────────────────────────
+export type StatusServico = 'em_andamento' | 'concluido';
+
+export interface Servico {
+  id: string;
+  nome: string;
+  valorContratado: number;
+  status: StatusServico;
+  // Calculados a partir dos gastos vinculados — nunca armazenados (ver calcularServico).
+  totalGastos: number;
+  quantidadeGastos: number;
+  lucro: number;
+  gastos?: Gasto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const STATUS_SERVICO_LABELS: Record<string, string> = {
+  em_andamento: 'Em andamento',
+  concluido: 'Concluído',
+};
+
+export const STATUS_SERVICO_COLORS: Record<string, string> = {
+  em_andamento: 'bg-blue-100 text-blue-700',
+  concluido: 'bg-green-100 text-green-700',
+};
 
 export interface PdfExtractResult {
   nomeOrganizador?: string;

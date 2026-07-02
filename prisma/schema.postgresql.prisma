@@ -140,10 +140,25 @@ model Gasto {
   numeroDocumento String?
   serieDocumento  String?
   produtos        String?  // JSON: [{ descricao, quantidade, unidade, valorUnitario, valorTotal }]
+  servicoId      String?
+  servico        Servico?  @relation(fields: [servicoId], references: [id])
   usuarioId      String?
   usuario        Usuario?  @relation(fields: [usuarioId], references: [id])
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+}
+
+// ─── Serviços (agrupam gastos de uma obra/instalação/trabalho) ────────────────
+model Servico {
+  id              String   @id @default(cuid())
+  nome            String
+  valorContratado Float
+  status          String   @default("em_andamento") // 'em_andamento' | 'concluido'
+  gastos          Gasto[]
+  usuarioId       String?
+  usuario         Usuario? @relation(fields: [usuarioId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // ─── FASE 12 — Fila de Processamento de Produção ──────────────────────────────
@@ -251,4 +266,5 @@ model Usuario {
   notas        NotaFiscal[]
   impostos     Imposto[]
   gastos       Gasto[]
+  servicos     Servico[]
 }
