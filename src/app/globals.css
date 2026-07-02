@@ -81,6 +81,20 @@
 }
 .animate-enter { animation: wizardEnter 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
 
+/* Home screen — saudação suave */
+@keyframes homeGreeting {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.home-greet { animation: homeGreeting 1.1s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Home screen — pergunta e cards (fade subindo) */
+@keyframes homeReveal {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.home-reveal { animation: homeReveal 0.65s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
 /* Fade in */
 @keyframes fadeIn {
   from { opacity: 0; }

@@ -8,10 +8,19 @@ import { SessionProvider } from '@/context/SessionContext';
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isPublicRoute = pathname.startsWith('/auth') || pathname === '/';
+  // Home é autenticada mas fullscreen — sem sidebar nem nav
+  const isFullscreen  = pathname === '/home';
 
-  // Rotas públicas (landing + auth): sem sidebar nem nav
   if (isPublicRoute) {
     return <>{children}</>;
+  }
+
+  if (isFullscreen) {
+    return (
+      <SessionProvider>
+        {children}
+      </SessionProvider>
+    );
   }
 
   return (
