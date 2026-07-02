@@ -192,8 +192,12 @@ export default function NovoGastoPage() {
           fornecedorCnpj, numeroDocumento, serieDocumento, produtos,
         }),
       });
-      if (!r.ok) { const d = await r.json(); setError(d.error || 'Erro ao salvar.'); return; }
-      router.push('/gastos');
+      const d = await r.json();
+      if (!r.ok) { setError(d.error || 'Erro ao salvar.'); return; }
+      // Vai para o detalhe (não a lista): a lista filtra por "Este mês" e, quando a
+      // data vem do documento extraído (normalmente no passado), o gasto some da
+      // visão padrão — parecendo que não foi salvo. Mesmo padrão do fluxo de Notas.
+      router.push(`/gastos/${d.id}`);
     } catch { setError('Erro de conexão.'); }
     finally { setSaving(false); }
   };

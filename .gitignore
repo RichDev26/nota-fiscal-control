@@ -24,6 +24,7 @@ prisma/*.db-journal
 # uploads (não versionar arquivos enviados por usuários)
 public/uploads/*
 !public/uploads/.gitkeep
+tmp/
 
 # logs de auditoria do motor de extração (runtime, não versionar)
 src/lib/extractors/data/auditoria/
