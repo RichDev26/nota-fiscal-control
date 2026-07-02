@@ -25,7 +25,7 @@ function s(css: string): React.CSSProperties {
 
 export default async function HomePage() {
   const session = await getSession();
-  if (session) redirect('/painel');
+  if (session) redirect('/home');
 
   return (
     <>

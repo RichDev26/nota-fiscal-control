@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FileText, Wallet, PlusCircle, Receipt, Settings } from 'lucide-react';
+import { Home, FileText, Wallet, PlusCircle, Receipt, Settings } from 'lucide-react';
 
 const links = [
-  { href: '/painel',        label: 'Início',   icon: LayoutDashboard },
+  { href: '/home',          label: 'Início',   icon: Home },
   { href: '/notas',         label: 'Notas',    icon: FileText },
   { href: '/notas/nova',    label: 'Nova',     icon: PlusCircle, highlight: true },
   { href: '/gastos',        label: 'Gastos',   icon: Wallet },
