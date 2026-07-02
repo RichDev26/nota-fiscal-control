@@ -53,7 +53,13 @@ export async function POST(req: NextRequest) {
     }
 
     const servico = await prisma.servico.create({
-      data: { nome, valorContratado, usuarioId: session.sub },
+      data: {
+        nome, valorContratado, usuarioId: session.sub,
+        gestor:          body.gestor          ? String(body.gestor).trim()          : null,
+        comprador:       body.comprador       ? String(body.comprador).trim()       : null,
+        numeroOF:        body.numeroOF        ? String(body.numeroOF).trim()        : null,
+        numeroOrcamento: body.numeroOrcamento ? String(body.numeroOrcamento).trim() : null,
+      },
     });
 
     return NextResponse.json({ ...servico, ...calcularServico(valorContratado, []) }, { status: 201 });

@@ -154,6 +154,10 @@ model Servico {
   nome            String
   valorContratado Float
   status          String   @default("em_andamento") // 'em_andamento' | 'concluido'
+  gestor          String?
+  comprador       String?
+  numeroOF        String?  // Número da Ordem de Fornecimento
+  numeroOrcamento String?
   gastos          Gasto[]
   usuarioId       String?
   usuario         Usuario? @relation(fields: [usuarioId], references: [id])

@@ -169,6 +169,10 @@ export interface Servico {
   nome: string;
   valorContratado: number;
   status: StatusServico;
+  gestor?: string | null;
+  comprador?: string | null;
+  numeroOF?: string | null;
+  numeroOrcamento?: string | null;
   // Calculados a partir dos gastos vinculados — nunca armazenados (ver calcularServico).
   totalGastos: number;
   quantidadeGastos: number;

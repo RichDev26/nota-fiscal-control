@@ -79,10 +79,10 @@ export default function GastosPage() {
   const total = gastos.reduce((s, g) => s + (g.valor || 0), 0);
 
   return (
-    <div className="p-5 md:p-8 max-w-5xl mx-auto">
+    <div className="p-5 md:p-8 max-w-6xl mx-auto">
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
 
-      <div className="lg:grid lg:grid-cols-[1fr_300px] lg:gap-6 lg:items-start">
+      <div className="lg:grid lg:grid-cols-[1fr_320px] xl:grid-cols-[1fr_360px] lg:gap-6 lg:items-start">
       <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between pt-2">

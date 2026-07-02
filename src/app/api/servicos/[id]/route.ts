@@ -51,6 +51,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     if ('nome' in body) data.nome = String(body.nome).trim();
     if ('status' in body && ['em_andamento', 'concluido'].includes(body.status)) data.status = body.status;
+    if ('gestor' in body)          data.gestor          = body.gestor          ? String(body.gestor).trim()          : null;
+    if ('comprador' in body)       data.comprador       = body.comprador       ? String(body.comprador).trim()       : null;
+    if ('numeroOF' in body)        data.numeroOF        = body.numeroOF        ? String(body.numeroOF).trim()        : null;
+    if ('numeroOrcamento' in body) data.numeroOrcamento = body.numeroOrcamento ? String(body.numeroOrcamento).trim() : null;
     if ('valorContratado' in body) {
       const v = typeof body.valorContratado === 'number'
         ? body.valorContratado

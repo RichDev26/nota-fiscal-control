@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Briefcase, Loader2, Check, X, Edit3,
-  CheckCircle2, PlusCircle, AlertCircle, Wallet, TrendingUp, TrendingDown,
+  CheckCircle2, RotateCcw, PlusCircle, AlertCircle, Wallet, TrendingUp, TrendingDown,
 } from 'lucide-react';
 import { formatarMoeda } from '@/lib/validators';
 import { GastoListItem } from '@/components/gastos/GastoListItem';
@@ -19,6 +19,10 @@ export default function ServicoDetailPage({ params }: { params: { id: string } }
   const [editing, setEditing] = useState(false);
   const [nome, setNome]       = useState('');
   const [valor, setValor]     = useState('');
+  const [gestor, setGestor]       = useState('');
+  const [comprador, setComprador] = useState('');
+  const [numeroOF, setNumeroOF]   = useState('');
+  const [numeroOrcamento, setNumeroOrcamento] = useState('');
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
 
@@ -29,6 +33,10 @@ export default function ServicoDetailPage({ params }: { params: { id: string } }
       setServico(d);
       setNome(d.nome);
       setValor(String(d.valorContratado));
+      setGestor(d.gestor ?? '');
+      setComprador(d.comprador ?? '');
+      setNumeroOF(d.numeroOF ?? '');
+      setNumeroOrcamento(d.numeroOrcamento ?? '');
     }
     setLoading(false);
   };
@@ -41,7 +49,7 @@ export default function ServicoDetailPage({ params }: { params: { id: string } }
       const valorNum = parseFloat(valor.replace(/\./g, '').replace(',', '.'));
       const r = await fetch(`/api/servicos/${params.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, valorContratado: valorNum }),
+        body: JSON.stringify({ nome, valorContratado: valorNum, gestor, comprador, numeroOF, numeroOrcamento }),
       });
       if (!r.ok) { const d = await r.json(); setError(d.error || 'Erro ao salvar.'); return; }
       const updated: Servico = await r.json();
@@ -51,11 +59,15 @@ export default function ServicoDetailPage({ params }: { params: { id: string } }
     finally { setSaving(false); }
   };
 
-  const handleConcluir = async () => {
-    if (!confirm('Marcar este serviço como concluído? Ele deixará de aceitar novos gastos, mas nenhum dado será alterado ou excluído.')) return;
+  const handleToggleStatus = async () => {
+    const novoStatus = servico?.status === 'concluido' ? 'em_andamento' : 'concluido';
+    const msg = novoStatus === 'concluido'
+      ? 'Marcar este serviço como concluído? Ele deixará de aceitar novos gastos, mas nenhum dado será alterado ou excluído.'
+      : 'Reabrir este serviço? Ele voltará a aceitar novos gastos normalmente.';
+    if (!confirm(msg)) return;
     const r = await fetch(`/api/servicos/${params.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'concluido' }),
+      body: JSON.stringify({ status: novoStatus }),
     });
     if (r.ok) { const updated: Servico = await r.json(); setServico(updated); }
   };
@@ -94,6 +106,26 @@ export default function ServicoDetailPage({ params }: { params: { id: string } }
             <label className="label">Valor Total do Serviço</label>
             <input type="text" inputMode="decimal" className="input text-xl font-bold" value={valor} onChange={e => setValor(e.target.value)} />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Gestor</label>
+              <input type="text" className="input" placeholder="Opcional" value={gestor} onChange={e => setGestor(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Comprador</label>
+              <input type="text" className="input" placeholder="Opcional" value={comprador} onChange={e => setComprador(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Número da OF</label>
+              <input type="text" className="input" placeholder="Opcional" value={numeroOF} onChange={e => setNumeroOF(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Número do Orçamento</label>
+              <input type="text" className="input" placeholder="Opcional" value={numeroOrcamento} onChange={e => setNumeroOrcamento(e.target.value)} />
+            </div>
+          </div>
           <div className="flex gap-2 pt-2">
             <button onClick={() => setEditing(false)} className="btn-secondary flex-1 justify-center py-3 rounded-2xl">
               <X size={16} /> Cancelar
@@ -117,11 +149,9 @@ export default function ServicoDetailPage({ params }: { params: { id: string } }
                 </span>
               </div>
             </div>
-            {emAndamento && (
-              <button onClick={() => setEditing(true)} className="btn-ghost p-1.5 text-gray-400 hover:text-gray-700 shrink-0">
-                <Edit3 size={15} />
-              </button>
-            )}
+            <button onClick={() => setEditing(true)} className="btn-ghost p-1.5 text-gray-400 hover:text-gray-700 shrink-0">
+              <Edit3 size={15} />
+            </button>
           </div>
 
           <div className="grid grid-cols-3 gap-3 text-center">
@@ -142,11 +172,34 @@ export default function ServicoDetailPage({ params }: { params: { id: string } }
             </div>
           </div>
 
-          {emAndamento && (
-            <button onClick={handleConcluir} className="btn-secondary w-full justify-center py-3 rounded-2xl mt-5 text-green-700 hover:bg-green-50 hover:border-green-200">
-              <CheckCircle2 size={16} /> Marcar como Concluído
-            </button>
+          {(servico.gestor || servico.comprador || servico.numeroOF || servico.numeroOrcamento) && (
+            <div className="grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-gray-50">
+              {servico.gestor && (
+                <div><p className="text-[11px] text-gray-400 font-medium">Gestor</p><p className="text-sm font-semibold text-gray-800 truncate">{servico.gestor}</p></div>
+              )}
+              {servico.comprador && (
+                <div><p className="text-[11px] text-gray-400 font-medium">Comprador</p><p className="text-sm font-semibold text-gray-800 truncate">{servico.comprador}</p></div>
+              )}
+              {servico.numeroOF && (
+                <div><p className="text-[11px] text-gray-400 font-medium">Número da OF</p><p className="text-sm font-semibold text-gray-800 truncate">{servico.numeroOF}</p></div>
+              )}
+              {servico.numeroOrcamento && (
+                <div><p className="text-[11px] text-gray-400 font-medium">Orçamento</p><p className="text-sm font-semibold text-gray-800 truncate">{servico.numeroOrcamento}</p></div>
+              )}
+            </div>
           )}
+
+          <button
+            onClick={handleToggleStatus}
+            className={`w-full justify-center py-3 rounded-2xl mt-5 ${
+              emAndamento
+                ? 'btn-secondary text-green-700 hover:bg-green-50 hover:border-green-200'
+                : 'btn-secondary text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {emAndamento ? <CheckCircle2 size={16} /> : <RotateCcw size={16} />}
+            {emAndamento ? 'Marcar como Concluído' : 'Reabrir Serviço'}
+          </button>
         </div>
       )}
 
