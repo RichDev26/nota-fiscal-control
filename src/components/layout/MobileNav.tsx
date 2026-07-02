@@ -43,8 +43,8 @@ export default function MobileNav() {
 
       {/* Pill flutuante */}
       <div
-        className="relative flex items-center gap-1 bg-white/90 backdrop-blur-xl rounded-[28px] border border-gray-100/80 px-2 py-2 overflow-x-auto scroll-x-hidden max-w-full"
-        style={{ boxShadow: '0 8px 32px -8px rgba(0,0,0,0.12), 0 2px 8px -2px rgba(0,0,0,0.06)' }}
+        className="relative flex items-center gap-1.5 bg-white/90 backdrop-blur-xl rounded-[36px] border border-gray-100/80 px-3 py-3 overflow-x-auto scroll-x-hidden max-w-full"
+        style={{ boxShadow: '0 12px 40px -8px rgba(0,0,0,0.14), 0 4px 12px -2px rgba(0,0,0,0.07)' }}
       >
         {LINKS.map(({ href, label, icon: Icon }) => {
           // /home só marca ativo em match exato; demais marcam também em sub-rotas
@@ -55,29 +55,29 @@ export default function MobileNav() {
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-[11.5px] font-semibold
+              className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold
                           shrink-0 whitespace-nowrap select-none transition-all duration-200
                           ${active
                             ? 'bg-blue-600 text-white'
                             : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800 active:scale-95'
                           }`}
-              style={active ? { boxShadow: '0 2px 12px -2px rgba(37,99,235,0.50)' } : undefined}
+              style={active ? { boxShadow: '0 3px 14px -2px rgba(37,99,235,0.55)' } : undefined}
             >
-              <Icon size={14} strokeWidth={active ? 2.5 : 2} />
+              <Icon size={17} strokeWidth={active ? 2.5 : 2} />
               <span>{label}</span>
             </Link>
           );
         })}
 
         {/* Separador + botão Sair (preservado da Sidebar) */}
-        <div className="w-px h-5 bg-gray-100 mx-1 shrink-0" />
+        <div className="w-px h-6 bg-gray-100 mx-1.5 shrink-0" />
         <button
           onClick={handleLogout}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-[11.5px] font-semibold
+          className="flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold
                      shrink-0 whitespace-nowrap select-none transition-all duration-200
                      text-gray-400 hover:bg-red-50 hover:text-red-500 active:scale-95"
         >
-          <LogOut size={13} />
+          <LogOut size={16} />
           <span>Sair</span>
         </button>
       </div>
