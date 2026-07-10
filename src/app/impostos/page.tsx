@@ -9,7 +9,7 @@ import { formatarMoeda, formatarData } from '@/lib/validators';
 import { STATUS_IMPOSTO_LABELS, STATUS_IMPOSTO_COLORS } from '@/types';
 import type { Imposto } from '@/types';
 
-const TIPOS = ['ISS', 'IRPJ', 'CSLL', 'PIS', 'COFINS', 'INSS', 'IRRF', 'Simples Nacional', 'Outros'];
+const TIPOS = ['ISS', 'IRPJ', 'CSLL', 'PIS', 'COFINS', 'INSS', 'IRRF', 'FGTS', 'Simples Nacional', 'Outros'];
 const STATUS_OPTS = ['pendente', 'pago', 'vencido', 'cancelado'];
 
 const emptyForm = () => ({
