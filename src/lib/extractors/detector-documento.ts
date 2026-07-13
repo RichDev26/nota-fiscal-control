@@ -60,6 +60,31 @@ function pontuar(texto: string, evidencias: Evidencia[]): { score: number; achad
   return { score, achadas };
 }
 
+// ─── LAYOUT INTERNO DA NFS-e ──────────────────────────────────────────────────
+
+export type LayoutNfse = 'DANFSE_NACIONAL' | 'MUNICIPAL';
+
+const EV_DANFSE_NAC: Evidencia[] = [
+  { re: /\bdanfse\b/,                                   peso: 50, nome: 'DANFSe' },
+  { re: /documento auxiliar da nfs-?e/,                 peso: 25, nome: 'Documento Auxiliar da NFS-e' },
+  { re: /chave de acesso da nfs-?e/,                    peso: 25, nome: 'Chave de Acesso da NFS-e' },
+  { re: /competencia da nfs-?e/,                        peso: 20, nome: 'Competência da NFS-e' },
+  { re: /numero da dps/,                                peso: 20, nome: 'Número da DPS' },
+  { re: /serie da dps/,                                 peso: 15, nome: 'Série da DPS' },
+  { re: /\b\d{50}\b/,                                   peso: 20, nome: 'Chave 50 dígitos' },
+  { re: /codigo de tributacao nacional/,                peso: 15, nome: 'Código de Tributação Nacional' },
+  { re: /emitente da nfs-?e/,                           peso: 10, nome: 'Emitente da NFS-e' },
+];
+
+const LIMIAR_DANFSE_NAC = 50;
+
+/** Detecta o layout interno de uma NFS-e já confirmada pelo roteador. */
+export function detectarLayoutNfse(rawText: string): LayoutNfse {
+  const texto = stripAccents(rawText).toLowerCase();
+  const { score } = pontuar(texto, EV_DANFSE_NAC);
+  return score >= LIMIAR_DANFSE_NAC ? 'DANFSE_NACIONAL' : 'MUNICIPAL';
+}
+
 export function detectarTipoDocumento(rawText: string): DeteccaoResult {
   const texto = stripAccents(rawText).toLowerCase();
 

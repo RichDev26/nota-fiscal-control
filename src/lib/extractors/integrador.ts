@@ -246,6 +246,9 @@ function validarDocumentosFiscais(resultado: PdfExtractResult): PdfExtractResult
   };
 }
 
+// ─── EXPORTS PARA O ROTEADOR (DANFSe Nacional reutiliza as mesmas validações) ──
+export { verificarNotaCancelada, validarDocumentosFiscais, alertarRetencoesSimples, validarFatoGerador };
+
 // ─── PONTO DE ENTRADA PÚBLICO ─────────────────────────────────────────────────
 
 export async function extractFromPdfBuffer(buffer: Buffer): Promise<PdfExtractResult> {

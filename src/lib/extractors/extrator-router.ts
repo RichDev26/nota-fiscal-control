@@ -13,9 +13,10 @@
  */
 import pdfParse from 'pdf-parse';
 import type { PdfExtractResult } from '@/types';
-import { extractFromPdfBuffer, NotaCanceladaError } from './integrador';
-import { detectarTipoDocumento } from './detector-documento';
+import { extractFromPdfBuffer, NotaCanceladaError, verificarNotaCancelada, validarDocumentosFiscais, alertarRetencoesSimples, validarFatoGerador } from './integrador';
+import { detectarTipoDocumento, detectarLayoutNfse } from './detector-documento';
 import { extrairDanfeDeTexto } from './extrator-danfe';
+import { extrairDanfseNacional } from './extrator-danfse-nacional';
 
 export { NotaCanceladaError };
 
@@ -39,7 +40,19 @@ export async function extractDocumentFromPdfBuffer(pdfBuffer: Buffer): Promise<E
     return { ...res, _roteamento: { tipo: deteccao.tipo, scoreDanfe: deteccao.scoreDanfe, scoreNfse: deteccao.scoreNfse, evidencias: deteccao.evidencias } };
   }
 
-  // NFS-e / desconhecido → pipeline existente, sem qualquer modificação.
+  // NFS-e / desconhecido → detectar layout interno
+  const layoutNfse = detectarLayoutNfse(parsed.text);
+
+  if (layoutNfse === 'DANFSE_NACIONAL') {
+    let res = extrairDanfseNacional(parsed.text);
+    verificarNotaCancelada(res);          // lança NotaCanceladaError se cancelada
+    res = validarDocumentosFiscais(res);
+    res = alertarRetencoesSimples(res);
+    res = validarFatoGerador(res);
+    return { ...res, _roteamento: { tipo: 'DANFSE_NACIONAL', scoreDanfe: deteccao.scoreDanfe, scoreNfse: deteccao.scoreNfse, evidencias: deteccao.evidencias } };
+  }
+
+  // NFS-e municipal / desconhecido → pipeline existente, sem qualquer modificação.
   const res = await extractFromPdfBuffer(pdfBuffer);
   return { ...res, _roteamento: { tipo: deteccao.tipo, scoreDanfe: deteccao.scoreDanfe, scoreNfse: deteccao.scoreNfse, evidencias: deteccao.evidencias } };
 }

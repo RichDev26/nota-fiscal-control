@@ -283,6 +283,26 @@ export interface PdfExtractResult {
   inconsistencias?: string[];
   fontesExtracao?: string[];
   resumo?: string;
+  // ── DANFSe Nacional — campos extras (display-only; não salvos no banco) ──────
+  layoutNfse?: 'MUNICIPAL' | 'DANFSE_NACIONAL';
+  chaveAcessoNfse?: string;
+  competenciaNfse?: string;
+  numeroDps?: string;
+  serieDps?: string;
+  dataEmissaoDps?: string;
+  nbs?: string;
+  codigoTributacaoNacional?: string;
+  codigoTributacaoMunicipal?: string;
+  paisPrestacao?: string;
+  resultadoPrestacao?: string;
+  beneficioMunicipal?: string;
+  tipoImunidade?: string;
+  suspensaoExigibilidadeIssqn?: string;
+  numeroProcessoSuspensao?: string;
+  regimeEspecialTributacao?: string;
+  regimeApuracao?: string;
+  tributacaoIssqn?: string;
+  municipioIncidenciaIssqn?: string;
 }
 
 export interface FiltrosNota {
