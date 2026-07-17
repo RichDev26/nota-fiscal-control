@@ -305,6 +305,13 @@ export interface PdfExtractResult {
   municipioIncidenciaIssqn?: string;
 }
 
+export interface StatusAssinatura {
+  ativo: boolean;
+  motivo: 'trial_expirado' | 'assinatura_vencida' | null;
+  trialFimEm: Date | string | null;
+  periodoFimEm: Date | string | null;
+}
+
 export interface FiltrosNota {
   busca?: string;
   status?: string;
