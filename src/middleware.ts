@@ -10,10 +10,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest, signToken, setSessionCookie, COOKIE_NAME } from '@/lib/auth';
+import { isPublicPage } from '@/lib/route-access';
 
-// Rotas que não exigem autenticação
-const PUBLIC_PAGE_PREFIXES = ['/auth', '/landing'];
-const PUBLIC_PAGE_EXACT    = ['/'];
+// Rotas de API que não exigem autenticação (rotas de PÁGINA usam isPublicPage, importado acima)
 // /api/webhooks/mercadopago é chamado pelo servidor do Mercado Pago, sem
 // cookie de sessão — protegido por validação de assinatura HMAC dentro da
 // própria rota, não por login de usuário (mesmo padrão de PUBLIC_API_EXACT
@@ -25,8 +24,7 @@ const PUBLIC_API_PREFIXES  = ['/api/auth/', '/api/webhooks/'];
 const PUBLIC_API_EXACT = ['/api/colaboradores/sweep'];
 
 function isPublic(pathname: string): boolean {
-  if (PUBLIC_PAGE_EXACT.includes(pathname))                    return true;
-  if (PUBLIC_PAGE_PREFIXES.some(p => pathname.startsWith(p))) return true;
+  if (isPublicPage(pathname))                                  return true;
   if (PUBLIC_API_PREFIXES.some(p => pathname.startsWith(p)))  return true;
   if (PUBLIC_API_EXACT.includes(pathname))                     return true;
   return false;
@@ -35,7 +33,11 @@ function isPublic(pathname: string): boolean {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (isPublic(pathname)) return NextResponse.next();
+  if (isPublic(pathname)) {
+    const res = NextResponse.next();
+    res.headers.set('x-pathname', pathname);
+    return res;
+  }
 
   const session = await getSessionFromRequest(req);
 
@@ -53,6 +55,7 @@ export async function middleware(req: NextRequest) {
   // Sliding window: renovar token se restar menos de 15 dias
   const token = req.cookies.get(COOKIE_NAME)?.value;
   const res   = NextResponse.next();
+  res.headers.set('x-pathname', pathname);
   if (token) {
     try {
       const { exp } = JSON.parse(atob(token.split('.')[1]));
