@@ -55,4 +55,20 @@ export async function register() {
   // antes do primeiro fetch para si mesmo.
   setTimeout(tick, 5_000);
   setInterval(tick, INTERVALO_MS);
+
+  const tickAssinatura = async () => {
+    try {
+      const r = await fetch(`${baseUrl}/api/assinatura/sweep`, {
+        method:  'POST',
+        headers: process.env.SWEEP_SECRET ? { 'x-sweep-secret': process.env.SWEEP_SECRET } : {},
+      });
+      if (!r.ok) console.error(`[assinatura.scheduler] sweep retornou status ${r.status}`);
+    } catch (err) {
+      console.error('[assinatura.scheduler] falha ao disparar sweep de lembretes de assinatura', err);
+    }
+  };
+
+  console.log('[assinatura.scheduler] iniciado (intervalo: 24h)');
+  setTimeout(tickAssinatura, 10_000);
+  setInterval(tickAssinatura, 24 * 60 * 60 * 1000); // 1x/dia é suficiente — janela de lembrete é de 3 dias
 }

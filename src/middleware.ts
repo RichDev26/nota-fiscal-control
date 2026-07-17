@@ -21,7 +21,7 @@ const PUBLIC_API_PREFIXES  = ['/api/auth/', '/api/webhooks/'];
 // Match exato (não prefixo) — endpoints internos, chamados pelo próprio servidor
 // (sem cookie de sessão) e protegidos por segredo compartilhado na própria rota,
 // não por login de usuário. Não usar prefixo aqui: expor um path exato apenas.
-const PUBLIC_API_EXACT = ['/api/colaboradores/sweep'];
+const PUBLIC_API_EXACT = ['/api/colaboradores/sweep', '/api/assinatura/sweep'];
 
 function isPublic(pathname: string): boolean {
   if (isPublicPage(pathname))                                  return true;
