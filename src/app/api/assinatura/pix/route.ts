@@ -5,10 +5,9 @@ import prisma from '@/lib/prisma';
 import { validarCpfCnpj } from '@/lib/validators';
 import { criarCobrancaPix } from '@/lib/payments/mercadopago';
 import { logError } from '@/lib/extractors/logger';
+import { VALOR_ASSINATURA } from '@/lib/assinatura/config';
 
 export const dynamic = 'force-dynamic';
-
-const VALOR_ASSINATURA = 49.9;
 
 export async function POST(req: NextRequest) {
   const session = await getSession();

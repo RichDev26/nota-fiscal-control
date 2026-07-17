@@ -1,4 +1,5 @@
 import { formatarData } from '@/lib/validators';
+import { VALOR_ASSINATURA_FORMATADO } from '@/lib/assinatura/config';
 
 export interface DadosAssinaturaVencendo {
   nome: string;
@@ -35,7 +36,7 @@ export function templateAssinaturaVencendo(d: DadosAssinaturaVencendo): { subjec
               <p style="margin:0 0 12px 0;color:#111827;font-size:18px;font-weight:700;">Olá, ${d.nome.split(' ')[0]}!</p>
               <p style="margin:0 0 20px 0;color:#374151;font-size:14px;line-height:1.6;">
                 Sua assinatura vence em <strong>${formatarData(d.dataVencimento)}</strong>. Para continuar usando o
-                WorkPro Control sem interrupção, renove seu plano (R$ 49,90/mês via PIX) antes dessa data.
+                WorkPro Control sem interrupção, renove seu plano (${VALOR_ASSINATURA_FORMATADO}/mês via PIX) antes dessa data.
               </p>
             </td>
           </tr>

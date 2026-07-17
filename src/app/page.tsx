@@ -346,13 +346,10 @@ export default async function HomePage() {
             </div>
             <div style={s("background:#15161A;color:#fff;padding:44px 40px;display:flex;flex-direction:column;justify-content:center;text-align:center;")}>
               <span style={s("align-self:center;background:rgba(37,99,235,0.22);color:#9FBEFF;font-weight:700;font-size:12.5px;letter-spacing:0.04em;padding:6px 13px;border-radius:999px;")}>
-                75% OFF · POR TEMPO LIMITADO
+                PLANO ÚNICO
               </span>
-              <p style={s("margin:20px 0 0;color:#7C7E86;font-size:15px;")}>
-                <span style={s("text-decoration:line-through;")}>De R$ 199,90/mês</span>
-              </p>
-              <div style={s("display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:4px;")}>
-                <span style={s("font-family:'Newsreader',serif;font-weight:500;font-size:64px;line-height:1;")}>R$ 49,90</span>
+              <div style={s("display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:24px;")}>
+                <span style={s("font-family:'Newsreader',serif;font-weight:500;font-size:64px;line-height:1;")}>R$ 149,90</span>
               </div>
               <p style={s("margin:6px 0 0;color:#A6A8AF;font-size:14px;")}>por mês</p>
               <a href="/auth" className="cta" style={s("margin:26px 0 0;background:#fff;color:#15161A;font-weight:700;font-size:16px;padding:15px 24px;border-radius:999px;")}>
@@ -417,10 +414,10 @@ export default async function HomePage() {
                 Esse preço não vai ficar assim.
               </h2>
               <p style={s("font-size:18px;line-height:1.6;color:#DCE6FF;margin:20px auto 0;max-width:52ch;")}>
-                São 75% de desconto enquanto estamos em fase de expansão. Quando esse período acabar, o valor volta pra R$ 199,90/mês. Quem entrar agora trava o preço promocional enquanto mantiver a assinatura ativa.
+                Esse é o valor de lançamento, enquanto estamos em fase de expansão. Conforme mais prestadores entrarem, o preço sobe. Quem assinar agora trava esse valor enquanto mantiver a assinatura ativa.
               </p>
               <a href="#preco" className="cta" style={s("display:inline-block;margin-top:30px;background:#fff;color:#15161A;font-weight:700;font-size:16.5px;padding:16px 32px;border-radius:999px;")}>
-                Quero garantir meu desconto de 75%
+                Quero garantir esse preço
               </a>
             </div>
           </div>
@@ -464,12 +461,12 @@ export default async function HomePage() {
             <a href="/auth" className="cta" style={s("background:#2563EB;color:#fff;font-weight:600;font-size:17px;padding:16px 36px;border-radius:999px;box-shadow:0 10px 24px -8px rgba(37,99,235,0.55);")}>
               Começar meus 7 dias grátis →
             </a>
-            <span style={s("font-size:13px;color:#8A8A82;font-weight:500;")}>Desconto de 75% garantido pra quem entrar hoje</span>
+            <span style={s("font-size:13px;color:#8A8A82;font-weight:500;")}>Preço de lançamento garantido pra quem entrar hoje</span>
           </div>
           <div style={s("max-width:620px;margin:64px auto 0;text-align:left;background:#fff;border:1px solid rgba(0,0,0,0.06);border-left:3px solid #2563EB;border-radius:14px;padding:26px 28px;")}>
             <p style={s("margin:0;font-size:15.5px;line-height:1.65;color:#3A3A36;")}>
               <strong style={s("font-weight:700;")}>PS:</strong>{' '}
-              Se você chegou até aqui, é porque o problema é real. O WorkPro Control resolve isso por R$ 49,90/mês — menos do que uma hora do seu tempo faturado. Com 7 dias grátis, o risco é zero. O desconto de 75% é por tempo limitado.
+              Se você chegou até aqui, é porque o problema é real. O WorkPro Control resolve isso por R$ 149,90/mês — menos do que uma hora do seu tempo faturado. Com 7 dias grátis, o risco é zero. Esse é o preço de lançamento, por tempo limitado.
             </p>
           </div>
         </section>
