@@ -24,6 +24,11 @@ else
 fi
 
 echo "========================================"
+echo "[DB] Rodando backfill de assinaturas (idempotente — seguro rodar em todo start)..."
+echo "========================================"
+npx tsx scripts/backfill-assinaturas.ts || echo "[DB] AVISO: backfill de assinaturas falhou. Não bloqueia o start."
+
+echo "========================================"
 echo "[APP] Iniciando Next.js..."
 echo "========================================"
 exec npm start
