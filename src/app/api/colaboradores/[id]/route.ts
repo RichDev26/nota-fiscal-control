@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
 import { parseDateBR } from '@/lib/validators';
 import { serializarColaborador } from '@/lib/colaboradores/serializar';
+import { verificarAcessoAssinatura } from '@/lib/assinatura/acesso';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,11 @@ async function ownedColaborador(id: string, userId: string) {
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   const owned = await ownedColaborador(params.id, session.sub);
   if ('error' in owned) return owned.error;
@@ -30,6 +36,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   const owned = await ownedColaborador(params.id, session.sub);
   if ('error' in owned) return owned.error;
@@ -94,6 +105,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   const owned = await ownedColaborador(params.id, session.sub);
   if ('error' in owned) return owned.error;

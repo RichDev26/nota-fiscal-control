@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
 import { parseDateBR } from '@/lib/validators';
+import { verificarAcessoAssinatura } from '@/lib/assinatura/acesso';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +54,11 @@ function sanitizeUpdate(raw: Record<string, unknown>): Record<string, unknown> {
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   try {
     const nota = await prisma.notaFiscal.findUnique({
@@ -85,6 +91,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   try {
     const body = await req.json();
@@ -194,6 +205,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   try {
     const nota = await prisma.notaFiscal.findUnique({ where: { id: params.id }, select: { usuarioId: true } });

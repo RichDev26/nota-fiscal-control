@@ -5,12 +5,18 @@ export const dynamic = 'force-dynamic';
 import { extractDocumentFromPdfBuffer, NotaCanceladaError } from '@/lib/extractors/extrator-router';
 import { checkRateLimit } from '@/lib/rate-limiter';
 import { savePdf, generateTempId } from '@/lib/pdf-storage';
+import { verificarAcessoAssinatura } from '@/lib/assinatura/acesso';
 
 const MAX_BYTES = 50 * 1024 * 1024; // 50MB
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   // 2.3 Rate limiting: 30 uploads por hora por IP
   const ip =

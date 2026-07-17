@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { verificarAcessoAssinatura } from '@/lib/assinatura/acesso';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(_req: NextRequest, { params }: { params: { filename: string } }) {
   const session = await getSession();
   if (!session) return new NextResponse('Não autorizado', { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return new NextResponse('Assinatura inativa ou trial expirado.', { status: 402 });
+  }
 
   // Prevenir path traversal
   const safeName = params.filename.replace(/[^a-zA-Z0-9._-]/g, '');

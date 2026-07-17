@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
+import { verificarAcessoAssinatura } from '@/lib/assinatura/acesso';
 
 export const dynamic = 'force-dynamic';
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   try {
     const existing = await prisma.imposto.findUnique({ where: { id: params.id }, select: { usuarioId: true } });
@@ -37,6 +43,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   try {
     const existing = await prisma.imposto.findUnique({ where: { id: params.id }, select: { usuarioId: true } });

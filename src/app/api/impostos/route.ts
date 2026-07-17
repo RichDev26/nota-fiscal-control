@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getSession } from '@/lib/auth';
+import { verificarAcessoAssinatura } from '@/lib/assinatura/acesso';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   try {
     const { searchParams } = new URL(req.url);
@@ -33,6 +39,11 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return NextResponse.json({ error: 'Assinatura inativa ou trial expirado.' }, { status: 402 });
+  }
 
   try {
     const body = await req.json();
