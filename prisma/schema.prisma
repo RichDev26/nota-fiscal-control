@@ -307,6 +307,7 @@ model Usuario {
   email        String       @unique
   senhaHash    String
   nome         String
+  cpfCnpj      String?
   criadoEm    DateTime     @default(now())
   atualizadoEm DateTime     @updatedAt
   notas        NotaFiscal[]
@@ -314,4 +315,37 @@ model Usuario {
   gastos       Gasto[]
   servicos     Servico[]
   colaboradores Colaborador[]
+  assinatura   Assinatura?
+}
+
+// ─── Assinaturas (Mercado Pago / PIX) ──────────────────────────────────────────
+model Assinatura {
+  id                String     @id @default(cuid())
+  usuarioId         String     @unique
+  status            String     @default("TRIAL") // informativo — o acesso real é calculado por temAcessoAtivo()
+  trialFimEm        DateTime
+  periodoFimEm      DateTime?
+  lembreteEnviadoEm DateTime?
+  usuario           Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  cobrancas         Cobranca[]
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+}
+
+model Cobranca {
+  id             String     @id @default(cuid())
+  assinaturaId   String
+  metodo         String     @default("PIX")
+  valor          Float
+  status         String     @default("PENDENTE") // 'PENDENTE' | 'APROVADA' | 'REJEITADA' | 'EXPIRADA'
+  mpPaymentId    String?    @unique
+  idempotencyKey String     @unique
+  qrCode         String?
+  qrCodeBase64   String?
+  expiraEm       DateTime?
+  assinatura     Assinatura @relation(fields: [assinaturaId], references: [id], onDelete: Cascade)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status])
 }
