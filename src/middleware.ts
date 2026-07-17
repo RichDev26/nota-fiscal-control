@@ -14,7 +14,11 @@ import { getSessionFromRequest, signToken, setSessionCookie, COOKIE_NAME } from 
 // Rotas que não exigem autenticação
 const PUBLIC_PAGE_PREFIXES = ['/auth', '/landing'];
 const PUBLIC_PAGE_EXACT    = ['/'];
-const PUBLIC_API_PREFIXES  = ['/api/auth/'];
+// /api/webhooks/mercadopago é chamado pelo servidor do Mercado Pago, sem
+// cookie de sessão — protegido por validação de assinatura HMAC dentro da
+// própria rota, não por login de usuário (mesmo padrão de PUBLIC_API_EXACT
+// já usado para /api/colaboradores/sweep).
+const PUBLIC_API_PREFIXES  = ['/api/auth/', '/api/webhooks/'];
 // Match exato (não prefixo) — endpoints internos, chamados pelo próprio servidor
 // (sem cookie de sessão) e protegidos por segredo compartilhado na própria rota,
 // não por login de usuário. Não usar prefixo aqui: expor um path exato apenas.
