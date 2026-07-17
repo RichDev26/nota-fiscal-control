@@ -61,10 +61,16 @@ export async function POST(req: NextRequest) {
   // Hash da senha (custo 12 — ~250 ms, seguro contra brute force offline)
   const senhaHash = await hash(senha, 12);
 
-  // Criar usuário
-  const usuario = await prisma.usuario.create({
-    data: { email: emailNorm, senhaHash, nome: nome.trim() },
-    select: { id: true, email: true, nome: true },
+  // Criar usuário + iniciar trial de 7 dias na mesma transação
+  const usuario = await prisma.$transaction(async (tx) => {
+    const novoUsuario = await tx.usuario.create({
+      data: { email: emailNorm, senhaHash, nome: nome.trim() },
+      select: { id: true, email: true, nome: true },
+    });
+    await tx.assinatura.create({
+      data: { usuarioId: novoUsuario.id, trialFimEm: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    });
+    return novoUsuario;
   });
 
   // Criar sessão e settar cookie
