@@ -349,3 +349,19 @@ model Cobranca {
 
   @@index([status])
 }
+
+// ─── Backup de arquivos enviados (anexos) ──────────────────────────────────────
+// O disco de /api/uploads (data/uploads em produção) é EFÊMERO — some a cada
+// redeploy do Railway sem um Volume garantido. Espelha o mesmo padrão já usado
+// em NotaFiscal.pdfData: disco primeiro (rápido), banco como respaldo (nunca
+// perde o arquivo). Ver GET /api/uploads/[filename] para a lógica de fallback.
+model ArquivoUpload {
+  id        String   @id @default(cuid())
+  filename  String   @unique
+  mimeType  String
+  dados     String   // base64
+  usuarioId String?
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId])
+}

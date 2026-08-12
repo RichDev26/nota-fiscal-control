@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { verificarAcessoAssinatura } from '@/lib/assinatura/acesso';
+import prisma from '@/lib/prisma';
+import { logError } from '@/lib/extractors/logger';
 
 export const dynamic = 'force-dynamic';
 import { writeFile, mkdir } from 'fs/promises';
@@ -35,6 +37,19 @@ export async function POST(req: NextRequest) {
     await mkdir(uploadsDir, { recursive: true });
     const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     await writeFile(join(uploadsDir, filename), buffer);
+
+    // Respaldo no banco — o disco é efêmero em produção (Railway redeploy apaga
+    // data/uploads sem um Volume garantido). Mesmo padrão de NotaFiscal.pdfData.
+    // Não fatal: se o respaldo falhar, o upload já está no disco e continua
+    // funcionando normalmente até o próximo redeploy — melhor que falhar a
+    // requisição inteira por causa de um passo de segurança extra.
+    try {
+      await prisma.arquivoUpload.create({
+        data: { filename, mimeType: file.type, dados: buffer.toString('base64'), usuarioId: session.sub },
+      });
+    } catch (err) {
+      logError('upload', `Falha ao gravar respaldo em banco para ${filename}`, err as Error);
+    }
 
     return NextResponse.json({ url: `/api/uploads/${filename}`, filename });
   } catch (err) {

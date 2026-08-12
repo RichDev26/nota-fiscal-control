@@ -29,6 +29,11 @@ echo "========================================"
 npx tsx scripts/backfill-assinaturas.ts || echo "[DB] AVISO: backfill de assinaturas falhou. Não bloqueia o start."
 
 echo "========================================"
+echo "[DB] Resgatando anexos ainda presentes em disco (idempotente — seguro rodar em todo start)..."
+echo "========================================"
+npx tsx scripts/backfill-anexos.ts || echo "[DB] AVISO: resgate de anexos falhou. Não bloqueia o start."
+
+echo "========================================"
 echo "[APP] Iniciando Next.js..."
 echo "========================================"
 exec npm start
