@@ -17,16 +17,21 @@ export interface Plano {
   descricao: string;
 }
 
-export const PLANOS: Record<PlanoId, Plano> = {
-  mensal: {
+// Congelado: o catálogo é estado de módulo compartilhado num processo Node de
+// vida longa. Sem freeze, qualquer consumidor futuro que mutasse o objeto
+// devolvido por resolverPlano() (ex: aplicar desconto in-place) corromperia o
+// preço para TODAS as requisições seguintes até o restart — justamente o que
+// esta fonte única existe para impedir.
+export const PLANOS: Record<PlanoId, Plano> = Object.freeze({
+  mensal: Object.freeze({
     id: 'mensal',
     nome: 'Mensal',
     valor: 149.9,
     moeda: 'BRL',
     duracaoDias: 30,
     descricao: 'Assinatura WorkPro Control — 30 dias',
-  },
-};
+  }),
+}) as Record<PlanoId, Plano>;
 
 export const PLANO_PADRAO: Plano = PLANOS.mensal;
 
