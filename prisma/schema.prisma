@@ -335,19 +335,31 @@ model Assinatura {
 model Cobranca {
   id             String     @id @default(cuid())
   assinaturaId   String
-  metodo         String     @default("PIX")
+  metodo         String     @default("PIX")     // 'PIX' | 'CARTAO'
+  planoId        String     @default("mensal")  // referência ao catálogo server-side
   valor          Float
-  status         String     @default("PENDENTE") // 'PENDENTE' | 'APROVADA' | 'REJEITADA' | 'EXPIRADA'
+  moeda          String     @default("BRL")
+  // 'PENDENTE' | 'PROCESSANDO' | 'APROVADA' | 'REJEITADA' | 'CANCELADA' | 'FALHA' | 'EXPIRADA'
+  // Só 'APROVADA' concede acesso — ver processarPagamentoAprovado().
+  status         String     @default("PENDENTE")
+  statusDetalhe  String?                        // status_detail do gateway (ex: cc_rejected_high_risk)
+  processadaEm   DateTime?                      // quando o acesso foi efetivamente concedido
   mpPaymentId    String?    @unique
   idempotencyKey String     @unique
   qrCode         String?
   qrCodeBase64   String?
+  // Cartão: SOMENTE dados não-sensíveis vindos da resposta do gateway.
+  // NUNCA armazenar PAN completo, CVV ou validade.
+  ultimosDigitos String?
+  bandeira       String?
+  parcelas       Int?
   expiraEm       DateTime?
   assinatura     Assinatura @relation(fields: [assinaturaId], references: [id], onDelete: Cascade)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
   @@index([status])
+  @@index([assinaturaId, status])
 }
 
 // ─── Backup de arquivos enviados (anexos) ──────────────────────────────────────
