@@ -300,6 +300,8 @@ model LogSistema {
   @@index([tipo, timestamp])
 }
 
+// ─── Autenticação ─────────────────────────────────────────────────────────────
+
 model Usuario {
   id           String       @id @default(cuid())
   email        String       @unique
