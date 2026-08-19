@@ -31,17 +31,117 @@ Encontradas na auditoria do código atual (PIX), corrigidas nas Tasks 1 e 3:
 
 ---
 
-### Task 1: Endurecer o núcleo de confirmação (corrige V1, V2, V3)
+### Task 1: Schema — estados de pagamento e campos de auditoria
 
-Fundação de segurança. Deve vir antes do cartão porque o cartão multiplica a concorrência.
+**Files:**
+- Modify: `prisma/schema.prisma`
+- Modify: `prisma/schema.postgresql.prisma`
+- Create: `prisma/migrations/20260819000000_cartao_credito/migration.sql`
+
+**Interfaces:**
+- Produces: colunas novas em `Cobranca`: `statusDetalhe String?`, `processadaEm DateTime?`, `moeda String @default("BRL")`, `planoId String @default("mensal")`, `ultimosDigitos String?`, `bandeira String?`, `parcelas Int?`. Usadas por Tasks 1, 5, 6.
+
+- [ ] **Step 1: Editar `prisma/schema.prisma`**
+
+Substitua o modelo `Cobranca` inteiro por:
+
+```prisma
+model Cobranca {
+  id             String     @id @default(cuid())
+  assinaturaId   String
+  metodo         String     @default("PIX")     // 'PIX' | 'CARTAO'
+  planoId        String     @default("mensal")  // referência ao catálogo server-side
+  valor          Float
+  moeda          String     @default("BRL")
+  // 'PENDENTE' | 'PROCESSANDO' | 'APROVADA' | 'REJEITADA' | 'CANCELADA' | 'FALHA' | 'EXPIRADA'
+  // Só 'APROVADA' concede acesso — ver processarPagamentoAprovado().
+  status         String     @default("PENDENTE")
+  statusDetalhe  String?                        // status_detail do gateway (ex: cc_rejected_high_risk)
+  processadaEm   DateTime?                      // quando o acesso foi efetivamente concedido
+  mpPaymentId    String?    @unique
+  idempotencyKey String     @unique
+  qrCode         String?
+  qrCodeBase64   String?
+  // Cartão: SOMENTE dados não-sensíveis vindos da resposta do gateway.
+  // NUNCA armazenar PAN completo, CVV ou validade.
+  ultimosDigitos String?
+  bandeira       String?
+  parcelas       Int?
+  expiraEm       DateTime?
+  assinatura     Assinatura @relation(fields: [assinaturaId], references: [id], onDelete: Cascade)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status])
+  @@index([assinaturaId, status])
+}
+```
+
+- [ ] **Step 2: Aplicar exatamente a mesma edição em `prisma/schema.postgresql.prisma`**
+
+Os dois arquivos devem ficar idênticos exceto pelo bloco `datasource`.
+
+- [ ] **Step 3: Escrever a migration Postgres (aditiva)**
+
+Crie `prisma/migrations/20260819000000_cartao_credito/migration.sql`:
+
+```sql
+-- Aditiva: só ADD COLUMN com default/nullable. Nenhuma coluna removida,
+-- nenhum dado existente alterado. Cobranças PIX atuais continuam válidas:
+-- herdam planoId='mensal', moeda='BRL' e mantêm status/metodo intactos.
+ALTER TABLE "Cobranca" ADD COLUMN "planoId" TEXT NOT NULL DEFAULT 'mensal';
+ALTER TABLE "Cobranca" ADD COLUMN "moeda" TEXT NOT NULL DEFAULT 'BRL';
+ALTER TABLE "Cobranca" ADD COLUMN "statusDetalhe" TEXT;
+ALTER TABLE "Cobranca" ADD COLUMN "processadaEm" TIMESTAMP(3);
+ALTER TABLE "Cobranca" ADD COLUMN "ultimosDigitos" TEXT;
+ALTER TABLE "Cobranca" ADD COLUMN "bandeira" TEXT;
+ALTER TABLE "Cobranca" ADD COLUMN "parcelas" INTEGER;
+
+-- Índice de apoio para consultas de cobranças por assinatura+status.
+CREATE INDEX "Cobranca_assinaturaId_status_idx" ON "Cobranca"("assinaturaId", "status");
+
+-- Marca as cobranças JÁ aprovadas com processadaEm, para que o CAS e a
+-- auditoria tenham a data. Usa updatedAt (aproximação segura do momento da
+-- aprovação). NÃO altera status de nenhuma linha.
+UPDATE "Cobranca" SET "processadaEm" = "updatedAt" WHERE "status" = 'APROVADA' AND "processadaEm" IS NULL;
+```
+
+- [ ] **Step 4: Sincronizar o banco local e gerar o client**
+
+Run: `npx prisma db push && npx prisma generate`
+Expected: `Your database is now in sync with your Prisma schema.` seguido de `✔ Generated Prisma Client`.
+
+Se `prisma generate` falhar com `EPERM ... query_engine-windows.dll.node`, o servidor de dev está segurando o arquivo — pare o dev server e rode `npx prisma generate` de novo.
+
+- [ ] **Step 5: Confirmar que o Prisma Client reconhece as colunas novas**
+
+Run: `npx tsc --noEmit`
+Expected: sem erros. (Esta task é puramente aditiva no schema; nenhum código ainda usa as colunas novas.)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prisma/schema.prisma prisma/schema.postgresql.prisma prisma/migrations/20260819000000_cartao_credito
+git commit -m "feat(pagamento): schema — estados, plano, moeda e auditoria de cobranca"
+```
+
+---
+
+### Task 2: Endurecer o núcleo de confirmação (corrige V1, V2, V3)
+
+Fundação de segurança. Deve vir antes do cartão porque o cartão multiplica a concorrência: a resposta síncrona e o webhook do mesmo pagamento passam a chegar juntos por construção.
+
+Esta task inclui os call-sites afetados pela mudança de assinatura (`buscarPagamento` e o webhook), para que o repositório compile e os testes passem em **todo** commit.
 
 **Files:**
 - Modify: `src/lib/assinatura/servico.ts`
+- Modify: `src/lib/payments/mercadopago.ts` (só `buscarPagamento` — cartão fica na Task 4)
+- Modify: `src/app/api/webhooks/mercadopago/route.ts`
 - Create: `src/lib/assinatura/test-confirmacao-segura.ts`
 
 **Interfaces:**
-- Consumes: `prisma` de `@/lib/prisma`; `temAcessoAtivo` de `./acesso`.
-- Produces: `PagamentoConfirmado` (interface); `processarPagamentoAprovado(pagamento: PagamentoConfirmado, agora?: Date): Promise<ResultadoProcessamentoPagamento>` — **assinatura alterada**: agora recebe o snapshot completo do gateway, não só o id. `ResultadoProcessamentoPagamento` ganha novos motivos. Consumido por: webhook (Task 6), rota de cartão (Task 5).
+- Consumes: `prisma` de `@/lib/prisma`; `temAcessoAtivo` de `./acesso`; schema da Task 1 (`statusDetalhe`, `processadaEm`).
+- Produces: `PagamentoConfirmado` (interface); `processarPagamentoAprovado(pagamento: PagamentoConfirmado, agora?: Date): Promise<ResultadoProcessamentoPagamento>` — **assinatura alterada**: agora recebe o snapshot completo do gateway, não só o id. `PagamentoGateway` + `buscarPagamento(id): Promise<PagamentoGateway>` (retorno ampliado). Consumidos por: Task 4 (cartão), Task 6 (rota de cartão).
 
 - [ ] **Step 1: Escrever o teste (falhando)**
 
@@ -288,116 +388,98 @@ export async function processarPagamentoAprovado(
 }
 ```
 
-**Nota:** `statusDetalhe` e `processadaEm` são colunas novas, criadas na Task 2. Rodar este teste antes da Task 2 falha no Prisma Client — a ordem Task 2 → re-rodar Task 1 está prevista no Step 5 abaixo.
+`statusDetalhe` e `processadaEm` são as colunas criadas na Task 1.
 
-- [ ] **Step 4: Verificar tipos**
+- [ ] **Step 4: Ampliar `buscarPagamento` em `src/lib/payments/mercadopago.ts`**
 
-Run: `npx tsc --noEmit`
-Expected: erros em `statusDetalhe` / `processadaEm` (colunas ainda não existem) e no webhook (assinatura da função mudou). Ambos são resolvidos nas Tasks 2 e 6 — esperado neste ponto.
+O núcleo agora exige o snapshot completo, mas `buscarPagamento` hoje devolve só `{ status }` — descartando exatamente os campos que precisamos validar (V2/V3). Substitua a função inteira (linhas 67–71 do arquivo atual) por:
 
-- [ ] **Step 5: Commit (código, teste roda após a Task 2)**
+```ts
+/** Snapshot completo do pagamento no gateway — base de TODA decisão de acesso. */
+export interface PagamentoGateway {
+  mpPaymentId: string;
+  status: string;
+  statusDetail: string | null;
+  valor: number;
+  moeda: string;
+  liveMode: boolean;
+  ultimosDigitos: string | null;
+  bandeira: string | null;
+  parcelas: number | null;
+}
 
-```bash
-git add src/lib/assinatura/servico.ts src/lib/assinatura/test-confirmacao-segura.ts
-git commit -m "feat(pagamento): endurece confirmacao — CAS atomico, validacao de valor/moeda/ambiente"
-```
+export function mapearResposta(response: {
+  id?: number | string; status?: string; status_detail?: string;
+  transaction_amount?: number; currency_id?: string; live_mode?: boolean;
+  installments?: number; payment_method_id?: string;
+  card?: { last_four_digits?: string };
+}): PagamentoGateway {
+  return {
+    mpPaymentId:    String(response.id ?? ''),
+    status:         response.status ?? 'unknown',
+    statusDetail:   response.status_detail ?? null,
+    valor:          response.transaction_amount ?? 0,
+    moeda:          response.currency_id ?? '',
+    liveMode:       response.live_mode === true,
+    ultimosDigitos: response.card?.last_four_digits ?? null,
+    bandeira:       response.payment_method_id ?? null,
+    parcelas:       response.installments ?? null,
+  };
+}
 
----
-
-### Task 2: Schema — estados de pagamento e campos de auditoria
-
-**Files:**
-- Modify: `prisma/schema.prisma`
-- Modify: `prisma/schema.postgresql.prisma`
-- Create: `prisma/migrations/20260819000000_cartao_credito/migration.sql`
-
-**Interfaces:**
-- Produces: colunas novas em `Cobranca`: `statusDetalhe String?`, `processadaEm DateTime?`, `moeda String @default("BRL")`, `planoId String @default("mensal")`, `ultimosDigitos String?`, `bandeira String?`, `parcelas Int?`. Usadas por Tasks 1, 5, 6.
-
-- [ ] **Step 1: Editar `prisma/schema.prisma`**
-
-Substitua o modelo `Cobranca` inteiro por:
-
-```prisma
-model Cobranca {
-  id             String     @id @default(cuid())
-  assinaturaId   String
-  metodo         String     @default("PIX")     // 'PIX' | 'CARTAO'
-  planoId        String     @default("mensal")  // referência ao catálogo server-side
-  valor          Float
-  moeda          String     @default("BRL")
-  // 'PENDENTE' | 'PROCESSANDO' | 'APROVADA' | 'REJEITADA' | 'CANCELADA' | 'FALHA' | 'EXPIRADA'
-  // Só 'APROVADA' concede acesso — ver processarPagamentoAprovado().
-  status         String     @default("PENDENTE")
-  statusDetalhe  String?                        // status_detail do gateway (ex: cc_rejected_high_risk)
-  processadaEm   DateTime?                      // quando o acesso foi efetivamente concedido
-  mpPaymentId    String?    @unique
-  idempotencyKey String     @unique
-  qrCode         String?
-  qrCodeBase64   String?
-  // Cartão: SOMENTE dados não-sensíveis vindos da resposta do gateway.
-  // NUNCA armazenar PAN completo, CVV ou validade.
-  ultimosDigitos String?
-  bandeira       String?
-  parcelas       Int?
-  expiraEm       DateTime?
-  assinatura     Assinatura @relation(fields: [assinaturaId], references: [id], onDelete: Cascade)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  @@index([status])
-  @@index([assinaturaId, status])
+/**
+ * Busca o pagamento REAL no gateway. Fonte da verdade para conceder acesso —
+ * nunca confiar no corpo do webhook nem em nada vindo do cliente.
+ */
+export async function buscarPagamento(mpPaymentId: string): Promise<PagamentoGateway> {
+  const payment  = new Payment(getClient());
+  const response = await payment.get({ id: mpPaymentId });
+  return mapearResposta(response);
 }
 ```
 
-- [ ] **Step 2: Aplicar exatamente a mesma edição em `prisma/schema.postgresql.prisma`**
+Campos confirmados na tipagem do SDK instalado (`node_modules/mercadopago@3.2.0/dist/clients/payment/commonTypes.d.ts`): `id`, `status`, `status_detail`, `transaction_amount`, `currency_id`, `live_mode`, `installments`, `payment_method_id`, `card`.
 
-Os dois arquivos devem ficar idênticos exceto pelo bloco `datasource`.
+- [ ] **Step 5: Atualizar o call-site do webhook**
 
-- [ ] **Step 3: Escrever a migration Postgres (aditiva)**
+Em `src/app/api/webhooks/mercadopago/route.ts`, substitua o bloco `try` (linhas 27–35) por:
 
-Crie `prisma/migrations/20260819000000_cartao_credito/migration.sql`:
-
-```sql
--- Aditiva: só ADD COLUMN com default/nullable. Nenhuma coluna removida,
--- nenhum dado existente alterado. Cobranças PIX atuais continuam válidas:
--- herdam planoId='mensal', moeda='BRL' e mantêm status/metodo intactos.
-ALTER TABLE "Cobranca" ADD COLUMN "planoId" TEXT NOT NULL DEFAULT 'mensal';
-ALTER TABLE "Cobranca" ADD COLUMN "moeda" TEXT NOT NULL DEFAULT 'BRL';
-ALTER TABLE "Cobranca" ADD COLUMN "statusDetalhe" TEXT;
-ALTER TABLE "Cobranca" ADD COLUMN "processadaEm" TIMESTAMP(3);
-ALTER TABLE "Cobranca" ADD COLUMN "ultimosDigitos" TEXT;
-ALTER TABLE "Cobranca" ADD COLUMN "bandeira" TEXT;
-ALTER TABLE "Cobranca" ADD COLUMN "parcelas" INTEGER;
-
--- Índice de apoio para consultas de cobranças por assinatura+status.
-CREATE INDEX "Cobranca_assinaturaId_status_idx" ON "Cobranca"("assinaturaId", "status");
-
--- Marca as cobranças JÁ aprovadas com processadaEm, para que o CAS e a
--- auditoria tenham a data. Usa updatedAt (aproximação segura do momento da
--- aprovação). NÃO altera status de nenhuma linha.
-UPDATE "Cobranca" SET "processadaEm" = "updatedAt" WHERE "status" = 'APROVADA' AND "processadaEm" IS NULL;
+```ts
+  try {
+    const pagamento = await buscarPagamento(dataId);
+    // Toda a decisão (status, valor, moeda, ambiente, idempotência) é do núcleo.
+    const resultado = await processarPagamentoAprovado(pagamento);
+    logInfo('webhooks.mercadopago', 'Webhook processado', { dataId, status: pagamento.status, ...resultado });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
 ```
 
-- [ ] **Step 4: Sincronizar o banco local e gerar o client**
+**Por que remover o `if (pagamento.status !== 'approved') return` daqui:** essa checagem agora vive dentro de `processarPagamentoAprovado`, junto com valor/moeda/ambiente. Uma única porta de entrada para a decisão — impossível um caminho novo esquecer a validação.
 
-Run: `npx prisma db push && npx prisma generate`
-Expected: `Your database is now in sync with your Prisma schema.` seguido de `✔ Generated Prisma Client`.
+- [ ] **Step 6: Verificar tipos**
 
-Se `prisma generate` falhar com `EPERM ... query_engine-windows.dll.node`, o servidor de dev está segurando o arquivo — pare o dev server e rode `npx prisma generate` de novo.
+Run: `npx tsc --noEmit`
+Expected: sem erros.
 
-- [ ] **Step 5: Rodar o teste da Task 1 (agora deve passar)**
+- [ ] **Step 7: Rodar o teste do núcleo**
 
 Run: `npx tsx src/lib/assinatura/test-confirmacao-segura.ts`
 Expected: todas as linhas ✅, incluindo os dois testes de concorrência (`exatamente 1 processada` e `60 dias somados`).
 
-Se `duas cobranças distintas → 60 dias somados` falhar com 30, o optimistic locking não está retentando — verifique se `ConflitoConcorrencia` está sendo capturado pelo `catch` e continuando o loop, e não escapando.
+Se `duas cobranças distintas → 60 dias somados` falhar com 30, o optimistic locking não está retentando — verifique se `ConflitoConcorrencia` está sendo capturado pelo `catch` e continuando o loop, e não escapando da transação.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Regressão — o teste pré-existente do serviço**
+
+`src/lib/assinatura/test-servico.ts` chama `processarPagamentoAprovado` com a assinatura **antiga** (só o id) e vai quebrar a compilação. Atualize-o para passar o snapshot completo — `{ mpPaymentId, status: 'approved', statusDetail: 'accredited', valor: <o valor da cobrança criada no teste>, moeda: 'BRL', liveMode: true }` — preservando a intenção de cada asserção existente.
+
+Run: `npx tsx src/lib/assinatura/test-servico.ts`
+Expected: todas ✅.
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add prisma/schema.prisma prisma/schema.postgresql.prisma prisma/migrations/20260819000000_cartao_credito
-git commit -m "feat(pagamento): schema — estados, plano, moeda e auditoria de cobranca"
+git add src/lib/assinatura/servico.ts src/lib/assinatura/test-confirmacao-segura.ts src/lib/assinatura/test-servico.ts src/lib/payments/mercadopago.ts src/app/api/webhooks/mercadopago/route.ts
+git commit -m "feat(pagamento): endurece confirmacao — CAS atomico, validacao de valor/moeda/ambiente"
 ```
 
 ---
@@ -520,18 +602,18 @@ git commit -m "feat(pagamento): catalogo de planos server-side — preco nunca v
 
 ---
 
-### Task 4: Camada de gateway — cartão, busca enriquecida e mapeamento de erros
+### Task 4: Camada de gateway — criação de pagamento com cartão e mapeamento de erros
 
 **Files:**
-- Modify: `src/lib/payments/mercadopago.ts`
+- Modify: `src/lib/payments/mercadopago.ts` (adiciona `criarPagamentoCartao`)
 - Create: `src/lib/payments/erros-cartao.ts`
 - Create: `src/lib/payments/test-erros-cartao.ts`
 
 **Interfaces:**
-- Consumes: SDK `mercadopago@3.2.0` (`Payment`, `MercadoPagoConfig`).
-- Produces: `criarPagamentoCartao(input: CriarPagamentoCartaoInput): Promise<PagamentoCartaoResultado>`; `buscarPagamento(id)` **com retorno ampliado** `{ status, statusDetail, valor, moeda, liveMode }`; `mensagemErroCartao(status, statusDetail): string`. Usados por Tasks 5 e 6.
+- Consumes: SDK `mercadopago@3.2.0` (`Payment`, `MercadoPagoConfig`); `PagamentoGateway` e `mapearResposta` (Task 2).
+- Produces: `criarPagamentoCartao(input: CriarPagamentoCartaoInput): Promise<PagamentoGateway>`; `mensagemErroCartao(status, statusDetail): string`. Usados pela Task 6.
 
-**Campos confirmados na tipagem do SDK instalado** (`node_modules/mercadopago/dist/clients/payment/`): request aceita `token`, `installments`, `issuer_id`, `payment_method_id`, `binary_mode`, `transaction_amount`, `description`, `external_reference`, `statement_descriptor`, `capture`, `payer`; response expõe `id`, `status`, `status_detail`, `transaction_amount`, `currency_id`, `live_mode`, `card`, `three_ds_info`.
+**Campos confirmados na tipagem do SDK instalado** (`node_modules/mercadopago/dist/clients/payment/create/types.d.ts`): o request aceita `token`, `installments`, `issuer_id`, `payment_method_id`, `binary_mode`, `transaction_amount`, `description`, `external_reference`, `statement_descriptor`, `capture`, `payer`. Não inventar campos fora dessa lista.
 
 - [ ] **Step 1: Escrever o teste do mapeamento de erros (falhando)**
 
@@ -638,53 +720,11 @@ export function mensagemErroCartao(status: string, statusDetail: string | null):
 Run: `npx tsx src/lib/payments/test-erros-cartao.ts`
 Expected: todas ✅.
 
-- [ ] **Step 5: Ampliar `buscarPagamento` e adicionar `criarPagamentoCartao` em `src/lib/payments/mercadopago.ts`**
+- [ ] **Step 5: Adicionar `criarPagamentoCartao` em `src/lib/payments/mercadopago.ts`**
 
-Substitua a função `buscarPagamento` existente (linhas 67–71) e adicione o bloco de cartão:
+`PagamentoGateway`, `mapearResposta` e `buscarPagamento` já existem (criados na Task 2). Adicione apenas o bloco de cartão, reaproveitando `mapearResposta`:
 
 ```ts
-/** Snapshot completo do pagamento no gateway — base de TODA decisão de acesso. */
-export interface PagamentoGateway {
-  mpPaymentId: string;
-  status: string;
-  statusDetail: string | null;
-  valor: number;
-  moeda: string;
-  liveMode: boolean;
-  ultimosDigitos: string | null;
-  bandeira: string | null;
-  parcelas: number | null;
-}
-
-function mapearResposta(response: {
-  id?: number | string; status?: string; status_detail?: string;
-  transaction_amount?: number; currency_id?: string; live_mode?: boolean;
-  installments?: number; payment_method_id?: string;
-  card?: { last_four_digits?: string };
-}): PagamentoGateway {
-  return {
-    mpPaymentId:    String(response.id ?? ''),
-    status:         response.status ?? 'unknown',
-    statusDetail:   response.status_detail ?? null,
-    valor:          response.transaction_amount ?? 0,
-    moeda:          response.currency_id ?? '',
-    liveMode:       response.live_mode === true,
-    ultimosDigitos: response.card?.last_four_digits ?? null,
-    bandeira:       response.payment_method_id ?? null,
-    parcelas:       response.installments ?? null,
-  };
-}
-
-/**
- * Busca o pagamento REAL no gateway. Fonte da verdade para conceder acesso —
- * nunca confiar no corpo do webhook nem em nada vindo do cliente.
- */
-export async function buscarPagamento(mpPaymentId: string): Promise<PagamentoGateway> {
-  const payment  = new Payment(getClient());
-  const response = await payment.get({ id: mpPaymentId });
-  return mapearResposta(response);
-}
-
 export interface CriarPagamentoCartaoInput {
   valor: number;
   descricao: string;
@@ -740,37 +780,24 @@ export async function criarPagamentoCartao(input: CriarPagamentoCartaoInput): Pr
 }
 ```
 
-- [ ] **Step 6: Ajustar o webhook para o novo retorno (mantém PIX funcionando)**
-
-Em `src/app/api/webhooks/mercadopago/route.ts`, substitua o bloco `try` (linhas 27–35) por:
-
-```ts
-  try {
-    const pagamento = await buscarPagamento(dataId);
-    // Toda a decisão (status, valor, moeda, ambiente, idempotência) é do núcleo.
-    const resultado = await processarPagamentoAprovado(pagamento);
-    logInfo('webhooks.mercadopago', 'Webhook processado', { dataId, status: pagamento.status, ...resultado });
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-```
-
-**Por que remover o `if (status !== 'approved') return` daqui:** essa checagem agora vive dentro de `processarPagamentoAprovado`, junto com valor/moeda/ambiente. Uma única porta de entrada para a decisão, impossível de contornar por um caminho novo esquecer a validação.
-
-- [ ] **Step 7: Verificar tipos**
+- [ ] **Step 6: Verificar tipos**
 
 Run: `npx tsc --noEmit`
 Expected: sem erros.
 
-- [ ] **Step 8: Regressão do PIX — o webhook ainda concede acesso corretamente**
-
-Run: `npx tsx src/lib/assinatura/test-confirmacao-segura.ts`
-Expected: todas ✅ (o núcleo não mudou, só quem o chama).
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 7: Regressão — o núcleo e o webhook continuam intactos**
 
 ```bash
-git add src/lib/payments/mercadopago.ts src/lib/payments/erros-cartao.ts src/lib/payments/test-erros-cartao.ts src/app/api/webhooks/mercadopago/route.ts
-git commit -m "feat(pagamento): gateway de cartao (binary_mode) + snapshot completo + erros seguros"
+npx tsx src/lib/payments/test-erros-cartao.ts
+npx tsx src/lib/assinatura/test-confirmacao-segura.ts
+```
+Expected: todos ✅ (esta task só adiciona `criarPagamentoCartao`; não altera o núcleo nem o webhook).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/lib/payments/mercadopago.ts src/lib/payments/erros-cartao.ts src/lib/payments/test-erros-cartao.ts
+git commit -m "feat(pagamento): criacao de pagamento com cartao (binary_mode) + mensagens de erro seguras"
 ```
 
 ---
@@ -1584,9 +1611,7 @@ npx tsx src/lib/assinatura/test-acesso.ts
 npx tsx src/lib/assinatura/test-servico.ts
 npx tsx scripts/test-seguranca-pagamento.ts
 ```
-Expected: todos ✅.
-
-`test-servico.ts` é pré-existente e chama `processarPagamentoAprovado` com a assinatura **antiga** (só o id). Ele vai falhar a compilação — atualize-o para passar o snapshot completo (`{ mpPaymentId, status: 'approved', statusDetail: 'accredited', valor: <valor da cobrança>, moeda: 'BRL', liveMode: true }`), preservando a intenção original de cada asserção.
+Expected: todos ✅. (`test-servico.ts` já foi migrado para a nova assinatura na Task 2, Step 8.)
 
 - [ ] **Step 2: Compilação e lint limpos**
 
