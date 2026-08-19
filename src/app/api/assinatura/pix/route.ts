@@ -5,7 +5,8 @@ import prisma from '@/lib/prisma';
 import { validarCpfCnpj } from '@/lib/validators';
 import { criarCobrancaPix } from '@/lib/payments/mercadopago';
 import { logError } from '@/lib/extractors/logger';
-import { VALOR_ASSINATURA } from '@/lib/assinatura/config';
+import { checkPagamentoRateLimit } from '@/lib/payments/rate-limit-pagamento';
+import { resolverPlano } from '@/lib/assinatura/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,8 +14,19 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-  let body: { cpfCnpj?: string };
+  const rl = checkPagamentoRateLimit(session.sub);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Muitas tentativas de pagamento. Aguarde ${Math.ceil(rl.retryAfter / 60)} minuto(s).` },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    );
+  }
+
+  let body: { cpfCnpj?: string; planoId?: string };
   try { body = await req.json(); } catch { body = {}; }
+
+  const plano = resolverPlano(body.planoId ?? 'mensal');
+  if (!plano) return NextResponse.json({ error: 'Plano inválido.' }, { status: 400 });
 
   const usuario = await prisma.usuario.findUnique({ where: { id: session.sub } });
   if (!usuario) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
@@ -33,13 +45,20 @@ export async function POST(req: NextRequest) {
 
   const idempotencyKey = randomUUID();
   const cobranca = await prisma.cobranca.create({
-    data: { assinaturaId: assinatura.id, valor: VALOR_ASSINATURA, idempotencyKey },
+    data: {
+      assinaturaId: assinatura.id,
+      metodo:  'PIX',
+      planoId: plano.id,
+      valor:   plano.valor,
+      moeda:   plano.moeda,
+      idempotencyKey,
+    },
   });
 
   try {
     const resultado = await criarCobrancaPix({
-      valor:         VALOR_ASSINATURA,
-      descricao:     'Assinatura WorkPro Control — 30 dias',
+      valor:         plano.valor,
+      descricao:     plano.descricao,
       idempotencyKey,
       payerEmail:    usuario.email,
       payerNome:     usuario.nome,
