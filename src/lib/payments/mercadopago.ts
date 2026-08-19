@@ -112,6 +112,60 @@ export async function buscarPagamento(mpPaymentId: string): Promise<PagamentoGat
   return mapearResposta(response);
 }
 
+export interface CriarPagamentoCartaoInput {
+  valor: number;
+  descricao: string;
+  idempotencyKey: string;
+  /** Token gerado pelo MercadoPago.js no browser. PAN/CVV nunca chegam aqui. */
+  token: string;
+  installments: number;
+  paymentMethodId: string;
+  issuerId?: string;
+  payerEmail: string;
+  payerCpfCnpj: string;
+  /** Referência interna para reconciliação (id da nossa Cobranca). */
+  externalReference: string;
+}
+
+/**
+ * Cria o pagamento com cartão de forma SÍNCRONA e definitiva.
+ *
+ * binary_mode: true — documentado no SDK como "the payment is either instantly
+ * approved or rejected (no pending state)". É o mecanismo oficial do Mercado
+ * Pago para o comportamento pedido: a resposta desta chamada já é a decisão.
+ *
+ * capture não é enviado (default true) — cobrança capturada na hora, não
+ * pré-autorização. 'authorized' (autorizado sem captura) NÃO concede acesso
+ * em processarPagamentoAprovado().
+ */
+export async function criarPagamentoCartao(input: CriarPagamentoCartaoInput): Promise<PagamentoGateway> {
+  const payment = new Payment(getClient());
+  const cpfCnpj = input.payerCpfCnpj.replace(/\D/g, '');
+  const tipoDoc = cpfCnpj.length === 14 ? 'CNPJ' : 'CPF';
+
+  const response = await payment.create({
+    body: {
+      transaction_amount: input.valor,
+      description:        input.descricao,
+      token:              input.token,
+      installments:       input.installments,
+      payment_method_id:  input.paymentMethodId,
+      ...(input.issuerId ? { issuer_id: Number(input.issuerId) } : {}),
+      binary_mode:        true,
+      external_reference: input.externalReference,
+      statement_descriptor: 'WORKPROCONTROL',
+      payer: {
+        email: input.payerEmail,
+        identification: { type: tipoDoc, number: cpfCnpj },
+      },
+    },
+    requestOptions: { idempotencyKey: input.idempotencyKey },
+  });
+
+  if (!response.id) throw new Error('Resposta do gateway sem id de pagamento');
+  return mapearResposta(response);
+}
+
 export interface ValidarWebhookInput {
   xSignature: string | null;
   xRequestId: string | null;
