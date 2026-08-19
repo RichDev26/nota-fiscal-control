@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma';
 import type { Assinatura } from '@prisma/client';
 import type { StatusAssinatura } from '@/types';
 import { temAcessoAtivo } from './acesso';
+import { logError } from '@/lib/extractors/logger';
 
 const DURACAO_TRIAL_MS  = 7 * 24 * 60 * 60 * 1000;
 const DURACAO_PERIODO_MS = 30 * 24 * 60 * 60 * 1000;
@@ -40,16 +41,24 @@ export interface ResultadoProcessamentoPagamento {
     | 'status_nao_aprovado'
     | 'valor_divergente'
     | 'moeda_divergente'
-    | 'ambiente_divergente';
+    | 'ambiente_divergente'
+    | 'conflito_concorrencia';
   novoPeriodoFimEm?: Date;
 }
 
 /** Tolerância de centavo para comparação de float (o gateway devolve number). */
 const TOLERANCIA_VALOR = 0.01;
-const MOEDA_ESPERADA = 'BRL';
 
 /** Erro interno de concorrência — dispara retry, nunca vaza para o cliente. */
 class ConflitoConcorrencia extends Error {}
+
+/** Contador observável de retries por conflito — usado pelos testes para provar
+ *  que o caminho de retry (CAS miss / optimistic lock miss / P2034) foi de fato
+ *  exercitado, e não só que o resultado final bateu por acaso. */
+export let conflitosDeConcorrencia = 0;
+export function _resetContadorConflitos(): void { conflitosDeConcorrencia = 0; }
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * ÚNICO ponto do sistema que concede acesso pago. Idempotente e seguro sob
@@ -79,11 +88,6 @@ export async function processarPagamentoAprovado(
     return { processado: false, motivo: 'ambiente_divergente' };
   }
 
-  // ── Defesa 3: moeda ──
-  if (pagamento.moeda !== MOEDA_ESPERADA) {
-    return { processado: false, motivo: 'moeda_divergente' };
-  }
-
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     try {
       return await prisma.$transaction(async (tx) => {
@@ -93,9 +97,17 @@ export async function processarPagamentoAprovado(
         });
         if (!cobranca) return { processado: false, motivo: 'cobranca_nao_encontrada' as const };
 
-        // ── Defesa 3 (cont.): o valor pago deve bater com o que cobramos. ──
-        if (Math.abs(pagamento.valor - cobranca.valor) > TOLERANCIA_VALOR) {
+        // ── Defesa 3: o valor pago não pode ser MENOR que o cobrado. Pagar a
+        // mais é aceito (cliente já foi debitado, negar deixaria pago e sem
+        // acesso); só a subcobrança é recusada. ──
+        if (pagamento.valor < cobranca.valor - TOLERANCIA_VALOR) {
           return { processado: false, motivo: 'valor_divergente' as const };
+        }
+
+        // ── Defesa 3 (cont.): moeda deve bater com a DESTA cobrança, não com
+        // uma constante fixa — a fonte da verdade é o que o backend criou. ──
+        if (pagamento.moeda !== cobranca.moeda) {
+          return { processado: false, motivo: 'moeda_divergente' as const };
         }
 
         // ── Defesa 4: compare-and-swap atômico. Só quem sai daqui com
@@ -131,14 +143,32 @@ export async function processarPagamentoAprovado(
         return { processado: true as const, novoPeriodoFimEm };
       });
     } catch (err) {
-      if (err instanceof ConflitoConcorrencia) continue; // refaz a transação
+      // ConflitoConcorrencia = optimistic lock perdido (nosso). P2034 = write
+      // conflict/deadlock que o próprio Postgres detectou. Ambos são
+      // transitórios: vale a pena refazer a transação do zero.
+      const isP2034 = typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2034';
+      if (err instanceof ConflitoConcorrencia || isP2034) {
+        conflitosDeConcorrencia++;
+        await sleep(10 * (tentativa + 1)); // pequeno backoff: não bater de novo na mesma linha instantaneamente
+        continue;
+      }
       throw err;
     }
   }
 
-  // 3 tentativas perdidas seguidas: não concede. Falha fechada. O webhook do
-  // Mercado Pago reentrega depois e a cobrança é processada então.
-  return { processado: false, motivo: 'ja_processada' };
+  // 3 tentativas perdidas seguidas: não sabemos se o pagamento foi concedido
+  // por outra execução ou se todas colidiram sem ninguém vencer. Falha
+  // fechada (não concede), mas isto é DIFERENTE de idempotência — é uma
+  // condição anômala que precisa ficar visível em log/alerta, porque no fluxo
+  // de cartão (resposta síncrona + webhook correndo juntos) o cliente pode já
+  // ter sido cobrado sem que nada aqui tenha concedido acesso.
+  logError(
+    'assinatura.servico',
+    'processarPagamentoAprovado: 3 tentativas de retry esgotadas por conflito de concorrência',
+    undefined,
+    { mpPaymentId: pagamento.mpPaymentId },
+  );
+  return { processado: false, motivo: 'conflito_concorrencia' };
 }
 
 export async function obterStatusParaCliente(usuarioId: string): Promise<StatusAssinatura> {

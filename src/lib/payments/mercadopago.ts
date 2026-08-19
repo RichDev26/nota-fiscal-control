@@ -83,8 +83,14 @@ export function mapearResposta(response: {
   installments?: number; payment_method_id?: string;
   card?: { last_four_digits?: string };
 }): PagamentoGateway {
+  // Fail-closed como todo o resto desta função: sem id não há como localizar a
+  // Cobranca (mpPaymentId é a chave de busca) — um '' mascarado geraria um
+  // lookup silencioso ao invés de um erro visível.
+  if (response.id === undefined || response.id === null) {
+    throw new Error('Resposta do Mercado Pago sem id de pagamento');
+  }
   return {
-    mpPaymentId:    String(response.id ?? ''),
+    mpPaymentId:    String(response.id),
     status:         response.status ?? 'unknown',
     statusDetail:   response.status_detail ?? null,
     valor:          response.transaction_amount ?? 0,
