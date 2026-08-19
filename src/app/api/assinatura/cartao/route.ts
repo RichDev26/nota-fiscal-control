@@ -12,6 +12,11 @@ import { logError, logInfo } from '@/lib/extractors/logger';
 
 export const dynamic = 'force-dynamic';
 
+// Mensagem usada sempre que o dinheiro pode ter sido debitado e não sabemos
+// (ou sabemos que sim) se o acesso foi concedido. NUNCA convida a nova tentativa.
+const MSG_EM_VERIFICACAO =
+  'Seu pagamento foi recebido e está em verificação. Se o acesso não for liberado em alguns minutos, fale com o suporte — não tente pagar novamente.';
+
 /**
  * Cobrança com cartão — síncrona.
  *
@@ -24,15 +29,8 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-
-  // Rate limit por usuário (session.sub — nunca algo influenciável pelo cliente) — anti card testing.
-  const rl = checkPagamentoRateLimit(session.sub);
-  if (!rl.allowed) {
-    return NextResponse.json(
-      { aprovado: false, mensagem: `Muitas tentativas de pagamento. Aguarde ${Math.ceil(rl.retryAfter / 60)} minuto(s) e tente novamente.` },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
-    );
+  if (!session) {
+    return NextResponse.json({ error: 'Não autorizado', aprovado: false, mensagem: 'Não autorizado.' }, { status: 401 });
   }
 
   let body: Record<string, unknown>;
@@ -45,23 +43,26 @@ export async function POST(req: NextRequest) {
   // ── Dados do cartão: opacos, só repassados ao gateway ──
   const token           = typeof body.token === 'string' ? body.token : '';
   const paymentMethodId = typeof body.paymentMethodId === 'string' ? body.paymentMethodId : '';
-  // issuerId só é aceito se for uma string só de dígitos — criarPagamentoCartao faz
-  // Number(issuerId) sem checar; uma string não-numérica viraria NaN → null no body
-  // enviado ao gateway, silenciosamente. Qualquer outra coisa é omitida (campo opcional).
+  // issuerId só é aceito se for uma string curta só de dígitos — criarPagamentoCartao
+  // faz Number(issuerId) sem checar; uma string longa perderia precisão no Number(),
+  // e uma não-numérica viraria NaN → null no body enviado ao gateway, silenciosamente.
   const issuerIdRaw = body.issuerId;
-  const issuerId     = typeof issuerIdRaw === 'string' && /^\d+$/.test(issuerIdRaw) ? issuerIdRaw : undefined;
-  const installments = Number.isInteger(body.installments) ? Number(body.installments) : 1;
-
+  const issuerId     = typeof issuerIdRaw === 'string' && /^\d{1,10}$/.test(issuerIdRaw) ? issuerIdRaw : undefined;
   if (!token || !paymentMethodId) {
     return NextResponse.json({ aprovado: false, mensagem: 'Dados do cartão incompletos. Tente novamente.' }, { status: 400 });
   }
-  // Nesta fase só há plano à vista. Impede manipulação de parcelas.
-  if (installments !== 1) {
+  // Nesta fase só há plano à vista. Aceita só undefined (default 1) ou
+  // literalmente o número 1 — rejeita qualquer outra coisa (strings, floats,
+  // null) em vez de coagir silenciosamente para 1. Impede manipulação de parcelas.
+  if (body.installments !== undefined && body.installments !== 1) {
     return NextResponse.json({ aprovado: false, mensagem: 'Número de parcelas inválido.' }, { status: 400 });
   }
+  const installments = 1;
 
   const usuario = await prisma.usuario.findUnique({ where: { id: session.sub } });
-  if (!usuario) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
+  if (!usuario) {
+    return NextResponse.json({ error: 'Usuário não encontrado', aprovado: false, mensagem: 'Usuário não encontrado.' }, { status: 404 });
+  }
 
   let cpfCnpj = usuario.cpfCnpj;
   if (!cpfCnpj) {
@@ -74,7 +75,23 @@ export async function POST(req: NextRequest) {
 
   // A assinatura é sempre a DO USUÁRIO DA SESSÃO — nunca um id vindo do corpo.
   const assinatura = await prisma.assinatura.findUnique({ where: { usuarioId: usuario.id } });
-  if (!assinatura) return NextResponse.json({ error: 'Assinatura não encontrada' }, { status: 404 });
+  if (!assinatura) {
+    return NextResponse.json({ error: 'Assinatura não encontrada', aprovado: false, mensagem: 'Assinatura não encontrada.' }, { status: 404 });
+  }
+
+  // Guard contra cobrança duplicada: se já há uma cobrança em voo (criada há
+  // menos de 2min, ainda PROCESSANDO) para esta assinatura, recusa uma nova.
+  // Sem isto, um retry na UI com token de cartão fresco gera uma nova cobrança
+  // por tentativa — e cada aprovação concede outro período de acesso.
+  const emVoo = await prisma.cobranca.findFirst({
+    where: { assinaturaId: assinatura.id, status: 'PROCESSANDO', createdAt: { gt: new Date(Date.now() - 120_000) } },
+  });
+  if (emVoo) {
+    return NextResponse.json(
+      { aprovado: false, mensagem: 'Já existe um pagamento em processamento. Aguarde alguns instantes antes de tentar novamente.' },
+      { status: 409 },
+    );
+  }
 
   // Cobrança criada ANTES da chamada ao gateway: garante que todo pagamento
   // tenha registro local, mesmo se o processo cair no meio.
@@ -92,6 +109,18 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // Rate limit por usuário (session.sub — nunca algo influenciável pelo cliente) —
+  // anti card testing. Chave própria (não compartilhada com PIX) e verificado só
+  // agora, imediatamente antes do gateway: toda validação acima já passou, então
+  // só tentativas que de fato alcançam o gateway consomem o orçamento.
+  const rl = checkPagamentoRateLimit(`cartao:${session.sub}`);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { aprovado: false, mensagem: `Muitas tentativas de pagamento. Aguarde ${Math.ceil(rl.retryAfter / 60)} minuto(s) e tente novamente.` },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    );
+  }
+
   let pagamento;
   try {
     pagamento = await criarPagamentoCartao({
@@ -107,75 +136,102 @@ export async function POST(req: NextRequest) {
       externalReference: cobranca.id,
     });
   } catch (err) {
-    // Gateway indisponível / timeout / resposta inválida.
-    // NUNCA concede acesso. Estado FALHA é terminal e auditável.
-    logError('assinatura.cartao', `Falha ao criar pagamento com cartão (cobranca ${cobranca.id})`, err as Error);
-    await prisma.cobranca.update({ where: { id: cobranca.id }, data: { status: 'FALHA' } });
+    // Gateway indisponível / timeout / resposta inválida — indistinguível
+    // localmente de "o Mercado Pago capturou mas a resposta não chegou".
+    // Mantém a cobrança PROCESSANDO (nunca FALHA): FALHA é terminal e leria
+    // como "nada foi cobrado", quando pode não ser o caso. PROCESSANDO deixa
+    // o webhook reconciliar depois, e o guard acima bloqueia retry por 2min
+    // enquanto não sabemos se o dinheiro foi debitado. Segue falhando fechado
+    // (nenhum acesso concedido aqui).
+    logError('assinatura.cartao', `Falha ao criar pagamento com cartão (cobranca ${cobranca.id})`, err as Error,
+      { cobrancaId: cobranca.id, idempotencyKey });
     return NextResponse.json(
-      { aprovado: false, mensagem: 'Não foi possível processar o pagamento agora. Tente novamente em instantes.' },
+      { aprovado: false, mensagem: 'Não foi possível confirmar seu pagamento agora. Aguarde alguns minutos antes de tentar novamente — evite tentar de novo imediatamente.' },
       { status: 502 },
     );
   }
 
-  // Vincula o pagamento do gateway à nossa cobrança e guarda só metadados
-  // não-sensíveis (últimos 4 dígitos e bandeira vêm da RESPOSTA do gateway).
-  await prisma.cobranca.update({
-    where: { id: cobranca.id },
-    data: {
-      mpPaymentId:    pagamento.mpPaymentId,
-      statusDetalhe:  pagamento.statusDetail,
-      ultimosDigitos: pagamento.ultimosDigitos,
-      bandeira:       pagamento.bandeira,
-    },
-  });
+  try {
+    // Vincula o pagamento do gateway à nossa cobrança e guarda só metadados
+    // não-sensíveis (últimos 4 dígitos e bandeira vêm da RESPOSTA do gateway).
+    await prisma.cobranca.update({
+      where: { id: cobranca.id },
+      data: {
+        mpPaymentId:    pagamento.mpPaymentId,
+        statusDetalhe:  pagamento.statusDetail,
+        ultimosDigitos: pagamento.ultimosDigitos,
+        bandeira:       pagamento.bandeira,
+      },
+    });
 
-  // ── DECISÃO: delegada ao núcleo, que revalida status/valor/moeda/ambiente
-  // e é idempotente contra o webhook do mesmo pagamento. ──
-  const resultado = await processarPagamentoAprovado(pagamento);
+    // ── DECISÃO: delegada ao núcleo, que revalida status/valor/moeda/ambiente
+    // e é idempotente contra o webhook do mesmo pagamento. ──
+    const resultado = await processarPagamentoAprovado(pagamento);
 
-  logInfo('assinatura.cartao', 'Pagamento com cartão processado', {
-    cobrancaId: cobranca.id,
-    status: pagamento.status,
-    processado: resultado.processado,
-    motivo: resultado.motivo,
-  });
+    logInfo('assinatura.cartao', 'Pagamento com cartão processado', {
+      cobrancaId: cobranca.id,
+      status: pagamento.status,
+      processado: resultado.processado,
+      motivo: resultado.motivo,
+    });
 
-  if (resultado.processado) {
-    return NextResponse.json({ aprovado: true });
-  }
+    if (resultado.processado) {
+      return NextResponse.json({ aprovado: true });
+    }
 
-  // Não aprovado: registra o estado real e devolve mensagem segura.
-  // 'ja_processada' significa que o webhook chegou primeiro — o acesso JÁ está
-  // liberado, então para o usuário isso é sucesso.
-  if (resultado.motivo === 'ja_processada') {
-    return NextResponse.json({ aprovado: true });
-  }
+    // Não aprovado: registra o estado real e devolve mensagem segura.
+    // 'ja_processada' significa que o webhook chegou primeiro — o acesso JÁ está
+    // liberado, então para o usuário isso é sucesso.
+    if (resultado.motivo === 'ja_processada') {
+      return NextResponse.json({ aprovado: true });
+    }
 
-  // 'conflito_concorrencia': as 3 tentativas de retry do CAS perderam a corrida.
-  // A cobrança pode ter sido de fato aprovada no gateway — não sabemos se outra
-  // execução venceu ou se todas colidiram. Isto NÃO é uma recusa: reportar como
-  // falha aqui seria mentir (o cartão pode já ter sido debitado), e marcar a
-  // cobrança como REJEITADA fecharia a porta para o webhook completá-la depois.
-  // Portanto: não tocamos no status da cobrança (fica como o CAS deixou —
-  // PENDENTE/PROCESSANDO — para o webhook do mesmo pagamento processar em
-  // seguida) e devolvemos uma mensagem de "em processamento" ao usuário.
-  if (resultado.motivo === 'conflito_concorrencia') {
+    // 'conflito_concorrencia': as 3 tentativas de retry do CAS perderam a corrida.
+    // A cobrança pode ter sido de fato aprovada no gateway — não sabemos se outra
+    // execução venceu ou se todas colidiram. Isto NÃO é uma recusa: reportar como
+    // falha aqui seria mentir (o cartão pode já ter sido debitado), e marcar a
+    // cobrança como REJEITADA fecharia a porta para o webhook completá-la depois.
+    // Portanto: não tocamos no status da cobrança (fica como o CAS deixou —
+    // PENDENTE/PROCESSANDO — para o webhook do mesmo pagamento processar em
+    // seguida) e devolvemos uma mensagem de "em processamento" ao usuário.
+    if (resultado.motivo === 'conflito_concorrencia') {
+      return NextResponse.json({
+        aprovado: false,
+        mensagem: mensagemErroCartao('in_process', null),
+      });
+    }
+
+    // O gateway APROVOU a cobrança (dinheiro capturado) mas o núcleo recusou
+    // conceder acesso (valor/moeda/ambiente divergente). NUNCA convidar a
+    // tentar de novo — isso duplicaria a cobrança em cima de um cliente que
+    // já pagou. Loga em ERROR para alguém ser avisado (ex.: MP_ACCESS_TOKEN
+    // de teste em produção faria TODA cobrança cair aqui).
+    if (pagamento.status === 'approved') {
+      logError('assinatura.cartao', `Pagamento aprovado NAO concedeu acesso: ${resultado.motivo}`, undefined,
+        { cobrancaId: cobranca.id, mpPaymentId: pagamento.mpPaymentId, motivo: resultado.motivo });
+      return NextResponse.json({ aprovado: false, mensagem: MSG_EM_VERIFICACAO });
+    }
+
+    const statusFinal =
+      pagamento.status === 'rejected'  ? 'REJEITADA' :
+      pagamento.status === 'cancelled' ? 'CANCELADA' :
+      'PENDENTE';
+
+    await prisma.cobranca.update({ where: { id: cobranca.id }, data: { status: statusFinal } });
+
     return NextResponse.json({
       aprovado: false,
-      mensagem: mensagemErroCartao('in_process', null),
+      mensagem: mensagemErroCartao(pagamento.status, pagamento.statusDetail),
     });
+  } catch (err) {
+    // Qualquer exceção daqui em diante acontece DEPOIS da captura no gateway
+    // (pool esgotado, lock do SQLite, blip de conexão...). O cartão já pode
+    // ter sido debitado — nunca deixar isto virar um 500 genérico que convide
+    // a tentar de novo. Loga cobrancaId + mpPaymentId juntos para a cobrança
+    // ser sempre reconciliável a partir dos logs, mesmo que mpPaymentId não
+    // tenha sido persistido no banco por causa deste mesmo erro.
+    logError('assinatura.cartao', `Falha pós-captura ao processar pagamento com cartão (cobranca ${cobranca.id})`, err as Error,
+      { cobrancaId: cobranca.id, mpPaymentId: pagamento.mpPaymentId });
+    return NextResponse.json({ aprovado: false, mensagem: MSG_EM_VERIFICACAO });
   }
-
-  const statusFinal =
-    pagamento.status === 'rejected'  ? 'REJEITADA' :
-    pagamento.status === 'cancelled' ? 'CANCELADA' :
-    pagamento.status === 'approved'  ? 'FALHA' : // aprovado mas reprovado na validação → auditar
-    'PENDENTE';
-
-  await prisma.cobranca.update({ where: { id: cobranca.id }, data: { status: statusFinal } });
-
-  return NextResponse.json({
-    aprovado: false,
-    mensagem: mensagemErroCartao(pagamento.status, pagamento.statusDetail),
-  });
 }

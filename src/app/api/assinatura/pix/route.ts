@@ -14,14 +14,6 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-  const rl = checkPagamentoRateLimit(session.sub);
-  if (!rl.allowed) {
-    return NextResponse.json(
-      { error: `Muitas tentativas de pagamento. Aguarde ${Math.ceil(rl.retryAfter / 60)} minuto(s).` },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
-    );
-  }
-
   let body: { cpfCnpj?: string; planoId?: string };
   try { body = await req.json(); } catch { body = {}; }
 
@@ -54,6 +46,17 @@ export async function POST(req: NextRequest) {
       idempotencyKey,
     },
   });
+
+  // Rate limit por usuário — chave própria (não compartilhada com o cartão) e
+  // verificado só agora, imediatamente antes do gateway: toda validação acima
+  // já passou, então só tentativas que de fato alcançam o gateway consomem o orçamento.
+  const rl = checkPagamentoRateLimit(`pix:${session.sub}`);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Muitas tentativas de pagamento. Aguarde ${Math.ceil(rl.retryAfter / 60)} minuto(s).` },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    );
+  }
 
   try {
     const resultado = await criarCobrancaPix({
