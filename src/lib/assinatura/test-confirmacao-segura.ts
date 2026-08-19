@@ -1,6 +1,6 @@
 // Execução: npx tsx src/lib/assinatura/test-confirmacao-segura.ts
 import prisma from '@/lib/prisma';
-import { processarPagamentoAprovado, conflitosDeConcorrencia, _resetContadorConflitos } from './servico';
+import { processarPagamentoAprovado } from './servico';
 import type { PagamentoConfirmado } from './servico';
 
 /**
@@ -35,7 +35,9 @@ import type { PagamentoConfirmado } from './servico';
  * (Docker indisponível aqui). Os testes 9 e 10 continuam no arquivo porque
  * cobrem o contrato observável (idempotência, soma correta sob concorrência
  * de processo), só não devem ser lidos como prova de segurança sob
- * concorrência real de banco.
+ * concorrência real de banco. Observar o caminho de retry (CAS miss /
+ * optimistic lock miss / P2034) de fato disparando exige rodar este arquivo
+ * (ou equivalente) contra Postgres real.
  */
 
 let falhas = 0;
@@ -140,7 +142,8 @@ function snapshot(over: Partial<PagamentoConfirmado> & { mpPaymentId: string }):
       const rDev = await processarPagamentoAprovado(snapshot({ mpPaymentId: cDev.mpPaymentId!, liveMode: false }));
       check('fora de produção + liveMode:false → ainda concede (a condição não está invertida)', rDev.processado === true);
     } finally {
-      env.NODE_ENV = nodeEnvOriginal;
+      if (nodeEnvOriginal === undefined) delete (process.env as Record<string, string | undefined>).NODE_ENV;
+      else (process.env as Record<string, string | undefined>).NODE_ENV = nodeEnvOriginal;
     }
 
     // ── 8. PRIMITIVAS — prova determinística do CAS e do optimistic lock ──
@@ -197,7 +200,6 @@ function snapshot(over: Partial<PagamentoConfirmado> & { mpPaymentId: string }):
 
     // ── 9. Concorrência de PROCESSO: mesma cobrança confirmada 5x em paralelo ──
     // (ver aviso no topo — em SQLite isto prova o resultado, não a interleaving)
-    _resetContadorConflitos();
     const c9 = await novaCobranca(`mp-race-${Date.now()}`);
     const snap9 = snapshot({ mpPaymentId: c9.mpPaymentId! });
     const antesRace = (await prisma.assinatura.findUnique({ where: { id: assinatura.id } }))!.periodoFimEm!;
@@ -208,7 +210,6 @@ function snapshot(over: Partial<PagamentoConfirmado> & { mpPaymentId: string }):
     const depoisRace = (await prisma.assinatura.findUnique({ where: { id: assinatura.id } }))!.periodoFimEm!;
     const diffDias = Math.round((depoisRace.getTime() - antesRace.getTime()) / dia);
     check('período estendido EXATAMENTE 30 dias (não 150)', diffDias === 30, `estendeu ${diffDias} dias`);
-    console.log(`  (informativo: conflitosDeConcorrencia observado nesta run = ${conflitosDeConcorrencia}; em SQLite pode ser 0 — não é uma falha)`);
 
     // ── 10. Concorrência de PROCESSO: duas cobranças DIFERENTES em paralelo ──
     const cA = await novaCobranca(`mp-par-a-${Date.now()}`);

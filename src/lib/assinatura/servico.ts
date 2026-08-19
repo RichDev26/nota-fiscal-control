@@ -52,12 +52,6 @@ const TOLERANCIA_VALOR = 0.01;
 /** Erro interno de concorrência — dispara retry, nunca vaza para o cliente. */
 class ConflitoConcorrencia extends Error {}
 
-/** Contador observável de retries por conflito — usado pelos testes para provar
- *  que o caminho de retry (CAS miss / optimistic lock miss / P2034) foi de fato
- *  exercitado, e não só que o resultado final bateu por acaso. */
-export let conflitosDeConcorrencia = 0;
-export function _resetContadorConflitos(): void { conflitosDeConcorrencia = 0; }
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -148,8 +142,7 @@ export async function processarPagamentoAprovado(
       // transitórios: vale a pena refazer a transação do zero.
       const isP2034 = typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2034';
       if (err instanceof ConflitoConcorrencia || isP2034) {
-        conflitosDeConcorrencia++;
-        await sleep(10 * (tentativa + 1)); // pequeno backoff: não bater de novo na mesma linha instantaneamente
+        if (tentativa < 2) await sleep(10 * (tentativa + 1)); // pequeno backoff: não bater de novo na mesma linha instantaneamente (só se houver próxima tentativa)
         continue;
       }
       throw err;

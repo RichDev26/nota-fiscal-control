@@ -28,6 +28,9 @@ export async function POST(req: NextRequest) {
     const pagamento = await buscarPagamento(dataId);
     // Toda a decisão (status, valor, moeda, ambiente, idempotência) é do núcleo.
     const resultado = await processarPagamentoAprovado(pagamento);
+    if (!resultado.processado && pagamento.status === 'approved' && resultado.motivo !== 'ja_processada') {
+      logError('webhooks.mercadopago', `Pagamento aprovado NAO concedeu acesso: ${resultado.motivo}`, undefined, { dataId, motivo: resultado.motivo });
+    }
     logInfo('webhooks.mercadopago', 'Webhook processado', { dataId, status: pagamento.status, ...resultado });
     return NextResponse.json({ ok: true });
   } catch (err) {
