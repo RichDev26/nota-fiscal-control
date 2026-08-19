@@ -26,12 +26,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const pagamento = await buscarPagamento(dataId);
-    if (pagamento.status !== 'approved') {
-      return NextResponse.json({ ok: true }); // pendente/rejeitado — nada a liberar ainda
-    }
-
-    const resultado = await processarPagamentoAprovado(dataId);
-    logInfo('webhooks.mercadopago', 'Webhook processado', { dataId, ...resultado });
+    // Toda a decisão (status, valor, moeda, ambiente, idempotência) é do núcleo.
+    const resultado = await processarPagamentoAprovado(pagamento);
+    logInfo('webhooks.mercadopago', 'Webhook processado', { dataId, status: pagamento.status, ...resultado });
     return NextResponse.json({ ok: true });
   } catch (err) {
     logError('webhooks.mercadopago', `Falha ao processar webhook do pagamento ${dataId}`, err as Error);

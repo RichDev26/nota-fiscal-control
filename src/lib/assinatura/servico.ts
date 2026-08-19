@@ -18,44 +18,127 @@ export async function criarAssinaturaTrial(usuarioId: string, inicioTrial: Date 
   return prisma.assinatura.create({ data: { usuarioId, trialFimEm } });
 }
 
+/**
+ * Snapshot do pagamento COMO RETORNADO PELO MERCADO PAGO. Só o backend produz
+ * este objeto (resposta de payment.create ou payment.get). Nenhum campo aqui
+ * pode ter origem no cliente — é essa a fronteira de confiança do sistema.
+ */
+export interface PagamentoConfirmado {
+  mpPaymentId: string;
+  status: string;
+  statusDetail: string | null;
+  valor: number;
+  moeda: string;
+  liveMode: boolean;
+}
+
 export interface ResultadoProcessamentoPagamento {
   processado: boolean;
-  motivo?: 'cobranca_nao_encontrada' | 'ja_processada';
+  motivo?:
+    | 'cobranca_nao_encontrada'
+    | 'ja_processada'
+    | 'status_nao_aprovado'
+    | 'valor_divergente'
+    | 'moeda_divergente'
+    | 'ambiente_divergente';
   novoPeriodoFimEm?: Date;
 }
 
+/** Tolerância de centavo para comparação de float (o gateway devolve number). */
+const TOLERANCIA_VALOR = 0.01;
+const MOEDA_ESPERADA = 'BRL';
+
+/** Erro interno de concorrência — dispara retry, nunca vaza para o cliente. */
+class ConflitoConcorrencia extends Error {}
+
 /**
- * Idempotente: chamado pelo webhook toda vez que o Mercado Pago confirma um
- * pagamento. Releitura do status dentro da transação protege contra entregas
- * duplicadas/simultâneas do webhook (o MP reenvia notificações).
+ * ÚNICO ponto do sistema que concede acesso pago. Idempotente e seguro sob
+ * concorrência (resposta síncrona do cartão + webhook chegam juntos por
+ * construção).
+ *
+ * Defesas, nesta ordem:
+ *   1. Status deve ser exatamente 'approved' — qualquer outro estado (inclusive
+ *      'authorized', que é pré-autorização sem captura) não concede nada.
+ *   2. Ambiente: em produção só pagamento live_mode conta.
+ *   3. Valor e moeda devem bater com a cobrança que NÓS criamos.
+ *   4. Compare-and-swap atômico no status da Cobrança: só uma execução vence.
+ *   5. Update condicional na Assinatura usando periodoFimEm como versão
+ *      (optimistic locking) — impede lost update entre cobranças distintas.
  */
 export async function processarPagamentoAprovado(
-  mpPaymentId: string,
+  pagamento: PagamentoConfirmado,
   agora: Date = new Date(),
 ): Promise<ResultadoProcessamentoPagamento> {
-  return prisma.$transaction(async (tx) => {
-    const cobranca = await tx.cobranca.findUnique({
-      where: { mpPaymentId },
-      include: { assinatura: true },
-    });
-    if (!cobranca) return { processado: false, motivo: 'cobranca_nao_encontrada' as const };
-    if (cobranca.status === 'APROVADA') return { processado: false, motivo: 'ja_processada' as const };
+  // ── Defesa 1: só 'approved' concede. Tudo mais é recusa explícita. ──
+  if (pagamento.status !== 'approved') {
+    return { processado: false, motivo: 'status_nao_aprovado' };
+  }
 
-    const baseAtual = cobranca.assinatura.periodoFimEm && cobranca.assinatura.periodoFimEm > agora
-      ? cobranca.assinatura.periodoFimEm
-      : agora;
-    const novoPeriodoFimEm = new Date(baseAtual.getTime() + DURACAO_PERIODO_MS);
+  // ── Defesa 2: pagamento de teste nunca concede acesso em produção. ──
+  if (process.env.NODE_ENV === 'production' && pagamento.liveMode !== true) {
+    return { processado: false, motivo: 'ambiente_divergente' };
+  }
 
-    await tx.cobranca.update({ where: { id: cobranca.id }, data: { status: 'APROVADA' } });
-    await tx.assinatura.update({
-      where: { id: cobranca.assinaturaId },
-      // lembreteEnviadoEm volta a null: a renovação abre um novo ciclo, que também
-      // deve poder gerar um lembrete de vencimento 3 dias antes do PRÓXIMO fim.
-      data: { periodoFimEm: novoPeriodoFimEm, status: 'ATIVA', lembreteEnviadoEm: null },
-    });
+  // ── Defesa 3: moeda ──
+  if (pagamento.moeda !== MOEDA_ESPERADA) {
+    return { processado: false, motivo: 'moeda_divergente' };
+  }
 
-    return { processado: true as const, novoPeriodoFimEm };
-  });
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const cobranca = await tx.cobranca.findUnique({
+          where: { mpPaymentId: pagamento.mpPaymentId },
+          include: { assinatura: true },
+        });
+        if (!cobranca) return { processado: false, motivo: 'cobranca_nao_encontrada' as const };
+
+        // ── Defesa 3 (cont.): o valor pago deve bater com o que cobramos. ──
+        if (Math.abs(pagamento.valor - cobranca.valor) > TOLERANCIA_VALOR) {
+          return { processado: false, motivo: 'valor_divergente' as const };
+        }
+
+        // ── Defesa 4: compare-and-swap atômico. Só quem sai daqui com
+        // count === 1 tem o direito de conceder acesso. Concorrentes veem 0. ──
+        const cas = await tx.cobranca.updateMany({
+          where: { id: cobranca.id, status: { in: ['PENDENTE', 'PROCESSANDO'] } },
+          data: {
+            status: 'APROVADA',
+            statusDetalhe: pagamento.statusDetail,
+            processadaEm: agora,
+          },
+        });
+        if (cas.count === 0) return { processado: false, motivo: 'ja_processada' as const };
+
+        // ── Defesa 5: estende o período com optimistic locking. periodoFimEm
+        // funciona como coluna de versão: se outra transação alterou entre a
+        // leitura e a escrita, count === 0 e refazemos tudo. ──
+        const periodoAtual = cobranca.assinatura.periodoFimEm;
+        const base = periodoAtual && periodoAtual > agora ? periodoAtual : agora;
+        const novoPeriodoFimEm = new Date(base.getTime() + DURACAO_PERIODO_MS);
+
+        const upd = await tx.assinatura.updateMany({
+          where: { id: cobranca.assinaturaId, periodoFimEm: periodoAtual },
+          data: {
+            periodoFimEm: novoPeriodoFimEm,
+            status: 'ATIVA',
+            // Novo ciclo pode gerar novo lembrete de vencimento.
+            lembreteEnviadoEm: null,
+          },
+        });
+        if (upd.count === 0) throw new ConflitoConcorrencia();
+
+        return { processado: true as const, novoPeriodoFimEm };
+      });
+    } catch (err) {
+      if (err instanceof ConflitoConcorrencia) continue; // refaz a transação
+      throw err;
+    }
+  }
+
+  // 3 tentativas perdidas seguidas: não concede. Falha fechada. O webhook do
+  // Mercado Pago reentrega depois e a cobrança é processada então.
+  return { processado: false, motivo: 'ja_processada' };
 }
 
 export async function obterStatusParaCliente(usuarioId: string): Promise<StatusAssinatura> {

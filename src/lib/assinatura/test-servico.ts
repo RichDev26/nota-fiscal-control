@@ -1,6 +1,7 @@
 // Execução: npx tsx src/lib/assinatura/test-servico.ts
 import prisma from '@/lib/prisma';
 import { criarAssinaturaTrial, processarPagamentoAprovado, obterStatusParaCliente } from './servico';
+import type { PagamentoConfirmado } from './servico';
 
 let falhas = 0;
 const check = (n: string, ok: boolean, d = '') => { console.log(`${ok ? '✅' : '❌'} ${n}${d ? ' — ' + d : ''}`); if (!ok) falhas++; };
@@ -24,7 +25,11 @@ const dia = 24 * 60 * 60 * 1000;
     data: { assinaturaId: assinatura.id, valor: 49.9, idempotencyKey: `idem-${Date.now()}`, mpPaymentId: `mp-${Date.now()}` },
   });
 
-  const r1 = await processarPagamentoAprovado(cobranca.mpPaymentId!);
+  const snapshot = (mpPaymentId: string, valor = cobranca.valor): PagamentoConfirmado => ({
+    mpPaymentId, status: 'approved', statusDetail: 'accredited', valor, moeda: 'BRL', liveMode: true,
+  });
+
+  const r1 = await processarPagamentoAprovado(snapshot(cobranca.mpPaymentId!));
   check('primeira confirmação processa e estende o período', r1.processado === true);
 
   const status2 = await obterStatusParaCliente(usuario.id);
@@ -32,13 +37,13 @@ const dia = 24 * 60 * 60 * 1000;
 
   // ── Idempotência: reprocessar o MESMO mpPaymentId não deve estender de novo ──
   const periodoFimApos1 = (await prisma.assinatura.findUnique({ where: { id: assinatura.id } }))!.periodoFimEm!;
-  const r2 = await processarPagamentoAprovado(cobranca.mpPaymentId!);
+  const r2 = await processarPagamentoAprovado(snapshot(cobranca.mpPaymentId!));
   check('reprocessar mesmo pagamento -> não processado de novo (idempotente)', r2.processado === false && r2.motivo === 'ja_processada');
   const periodoFimApos2 = (await prisma.assinatura.findUnique({ where: { id: assinatura.id } }))!.periodoFimEm!;
   check('período NÃO foi estendido duas vezes', periodoFimApos1.getTime() === periodoFimApos2.getTime());
 
   // ── mpPaymentId desconhecido -> não processado, sem erro ──
-  const r3 = await processarPagamentoAprovado('mp-inexistente-999');
+  const r3 = await processarPagamentoAprovado(snapshot('mp-inexistente-999'));
   check('mpPaymentId desconhecido -> não processado, motivo correto', r3.processado === false && r3.motivo === 'cobranca_nao_encontrada');
 
   // Limpeza

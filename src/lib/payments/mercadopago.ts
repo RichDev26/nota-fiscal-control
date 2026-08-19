@@ -64,10 +64,46 @@ export async function criarCobrancaPix(input: CriarCobrancaPixInput): Promise<Co
   };
 }
 
-export async function buscarPagamento(mpPaymentId: string): Promise<{ status: string }> {
+/** Snapshot completo do pagamento no gateway — base de TODA decisão de acesso. */
+export interface PagamentoGateway {
+  mpPaymentId: string;
+  status: string;
+  statusDetail: string | null;
+  valor: number;
+  moeda: string;
+  liveMode: boolean;
+  ultimosDigitos: string | null;
+  bandeira: string | null;
+  parcelas: number | null;
+}
+
+export function mapearResposta(response: {
+  id?: number | string; status?: string; status_detail?: string;
+  transaction_amount?: number; currency_id?: string; live_mode?: boolean;
+  installments?: number; payment_method_id?: string;
+  card?: { last_four_digits?: string };
+}): PagamentoGateway {
+  return {
+    mpPaymentId:    String(response.id ?? ''),
+    status:         response.status ?? 'unknown',
+    statusDetail:   response.status_detail ?? null,
+    valor:          response.transaction_amount ?? 0,
+    moeda:          response.currency_id ?? '',
+    liveMode:       response.live_mode === true,
+    ultimosDigitos: response.card?.last_four_digits ?? null,
+    bandeira:       response.payment_method_id ?? null,
+    parcelas:       response.installments ?? null,
+  };
+}
+
+/**
+ * Busca o pagamento REAL no gateway. Fonte da verdade para conceder acesso —
+ * nunca confiar no corpo do webhook nem em nada vindo do cliente.
+ */
+export async function buscarPagamento(mpPaymentId: string): Promise<PagamentoGateway> {
   const payment  = new Payment(getClient());
   const response = await payment.get({ id: mpPaymentId });
-  return { status: response.status ?? 'unknown' };
+  return mapearResposta(response);
 }
 
 export interface ValidarWebhookInput {
