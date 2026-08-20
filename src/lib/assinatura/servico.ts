@@ -6,6 +6,8 @@ import prisma from '@/lib/prisma';
 import type { Assinatura } from '@prisma/client';
 import type { StatusAssinatura } from '@/types';
 import { temAcessoAtivo } from './acesso';
+import { PLANO_PADRAO } from './config';
+import { cancelarAssinaturaRecorrente } from '@/lib/payments/mercadopago';
 import { logError } from '@/lib/extractors/logger';
 
 const DURACAO_TRIAL_MS  = 7 * 24 * 60 * 60 * 1000;
@@ -180,12 +182,12 @@ export async function obterStatusParaCliente(usuarioId: string): Promise<StatusA
       })
     : null;
 
-  // Só cartão: PIX é avulso, não há cobrança futura para interromper. E só faz
-  // sentido cancelar enquanto ainda existe período pago vigente.
+  // Só há o que cancelar quando existe assinatura RECORRENTE no gateway. PIX é
+  // avulso — nada a interromper. E só faz sentido enquanto o período é vigente.
   const podeCancelar =
-    ultimaAprovada?.metodo === 'CARTAO' &&
-    !assinatura?.canceladaEm &&
-    !!assinatura?.periodoFimEm &&
+    !!assinatura?.mpPreapprovalId &&
+    !assinatura.canceladaEm &&
+    !!assinatura.periodoFimEm &&
     assinatura.periodoFimEm > new Date();
 
   return {
@@ -201,24 +203,29 @@ export async function obterStatusParaCliente(usuarioId: string): Promise<StatusA
 
 export interface ResultadoCancelamento {
   cancelada: boolean;
-  motivo?: 'sem_assinatura' | 'sem_pagamento_cartao' | 'ja_cancelada' | 'sem_periodo_vigente';
+  motivo?: 'sem_assinatura' | 'sem_assinatura_recorrente' | 'ja_cancelada' | 'sem_periodo_vigente' | 'falha_gateway';
   acessoAte?: Date;
 }
 
 /**
- * Cancela a renovação da assinatura.
+ * Cancela a assinatura recorrente.
+ *
+ * INTERROMPE AS COBRANÇAS FUTURAS DE VERDADE: chama o Mercado Pago
+ * (PUT /preapproval/{id} status=cancelled) antes de marcar localmente. Se a
+ * chamada ao gateway falhar, NÃO marcamos como cancelada — seria pior mentir
+ * para o usuário e continuar cobrando o cartão dele.
  *
  * NÃO revoga acesso: o usuário mantém o período que já pagou (temAcessoAtivo
- * continua decidindo só pelas datas). O efeito real é parar os lembretes de
- * renovação e registrar a decisão.
- *
- * Nota honesta: a cobrança de cartão aqui é AVULSA (payment.create), não uma
- * preapproval recorrente do Mercado Pago — então não existe cobrança futura
- * automática para interromper. Nada é chamado no gateway.
+ * continua decidindo só pelas datas).
  *
  * Idempotente: cancelar duas vezes não muda nada e não é erro para o usuário.
  */
-export async function cancelarAssinatura(usuarioId: string, agora: Date = new Date()): Promise<ResultadoCancelamento> {
+export async function cancelarAssinatura(
+  usuarioId: string,
+  agora: Date = new Date(),
+  /** Injetável só para teste — em produção é sempre o cancelamento real no MP. */
+  cancelarNoGateway: (id: string) => Promise<unknown> = cancelarAssinaturaRecorrente,
+): Promise<ResultadoCancelamento> {
   const assinatura = await prisma.assinatura.findUnique({ where: { usuarioId } });
   if (!assinatura) return { cancelada: false, motivo: 'sem_assinatura' };
   if (assinatura.canceladaEm) return { cancelada: false, motivo: 'ja_cancelada', acessoAte: assinatura.periodoFimEm ?? undefined };
@@ -226,13 +233,19 @@ export async function cancelarAssinatura(usuarioId: string, agora: Date = new Da
     return { cancelada: false, motivo: 'sem_periodo_vigente' };
   }
 
-  const pagouCartao = await prisma.cobranca.findFirst({
-    where: { assinaturaId: assinatura.id, status: 'APROVADA', metodo: 'CARTAO' },
-    select: { id: true },
-  });
-  if (!pagouCartao) return { cancelada: false, motivo: 'sem_pagamento_cartao' };
+  if (!assinatura.mpPreapprovalId) return { cancelada: false, motivo: 'sem_assinatura_recorrente' };
 
-  // Guardado por canceladaEm: null — dois cliques simultâneos só cancelam uma vez.
+  // ORDEM IMPORTA: desliga no gateway PRIMEIRO. Marcar local antes e falhar aqui
+  // deixaria o usuário achando que cancelou enquanto o cartão segue sendo cobrado.
+  try {
+    await cancelarNoGateway(assinatura.mpPreapprovalId);
+  } catch (err) {
+    logError('assinatura.cancelar', `Falha ao cancelar no gateway (preapproval ${assinatura.mpPreapprovalId})`, err as Error,
+      { assinaturaId: assinatura.id, preapprovalId: assinatura.mpPreapprovalId });
+    return { cancelada: false, motivo: 'falha_gateway' };
+  }
+
+  // Guardado por canceladaEm: null — dois cliques simultâneos só marcam uma vez.
   const upd = await prisma.assinatura.updateMany({
     where: { id: assinatura.id, canceladaEm: null },
     data: { canceladaEm: agora, status: 'CANCELADA' },
@@ -240,4 +253,97 @@ export async function cancelarAssinatura(usuarioId: string, agora: Date = new Da
   if (upd.count === 0) return { cancelada: false, motivo: 'ja_cancelada', acessoAte: assinatura.periodoFimEm };
 
   return { cancelada: true, acessoAte: assinatura.periodoFimEm };
+}
+
+
+// ─── Faturas da assinatura recorrente ─────────────────────────────────────────
+
+export interface FaturaRecorrente {
+  faturaId: string;
+  mpPreapprovalId: string;
+  /** Status do PAGAMENTO da fatura no gateway ('approved' concede). */
+  statusPagamento: string;
+  valor: number;
+  moeda: string;
+  liveMode: boolean;
+}
+
+/**
+ * Processa uma fatura gerada pela assinatura recorrente do Mercado Pago.
+ *
+ * O MP cria a fatura sozinho a cada ciclo — não passa pela nossa rota. Então
+ * aqui materializamos a Cobranca correspondente (idempotente pelo unique em
+ * mpPaymentId = id da fatura) e delegamos a DECISÃO ao mesmo núcleo de sempre:
+ * processarPagamentoAprovado revalida status/valor/moeda/ambiente e concede sob
+ * CAS. Nenhum caminho novo de concessão de acesso é criado.
+ */
+export async function processarFaturaRecorrente(
+  fatura: FaturaRecorrente,
+  agora: Date = new Date(),
+): Promise<ResultadoProcessamentoPagamento> {
+  const assinatura = await prisma.assinatura.findUnique({
+    where: { mpPreapprovalId: fatura.mpPreapprovalId },
+  });
+  // Fatura de uma preapproval que não é nossa (ou que ainda não vinculamos).
+  if (!assinatura) return { processado: false, motivo: 'cobranca_nao_encontrada' };
+
+  // Valor ESPERADO desta competência: o que contratamos no gateway, nunca o que
+  // a própria fatura diz. Gravar fatura.valor aqui tornaria a checagem de valor
+  // do núcleo tautológica (compararia o número do gateway com ele mesmo) e uma
+  // fatura de R$ 1,00 passaria.
+  const valorEsperado = assinatura.valorRecorrente ?? PLANO_PADRAO.valor;
+
+  // Materializa a cobrança desta competência. O unique em mpPaymentId garante
+  // que reentregas do mesmo webhook não criem linhas duplicadas.
+  try {
+    await prisma.cobranca.create({
+      data: {
+        assinaturaId:    assinatura.id,
+        metodo:          'CARTAO',
+        planoId:         PLANO_PADRAO.id,
+        valor:           valorEsperado,
+        moeda:           'BRL',
+        status:          'PROCESSANDO',
+        mpPaymentId:     fatura.faturaId,
+        mpPreapprovalId: fatura.mpPreapprovalId,
+        idempotencyKey:  `fatura:${fatura.faturaId}`,
+      },
+    });
+  } catch (e) {
+    // P2002 = já existe (reentrega do webhook). Segue para o núcleo, que é
+    // idempotente e vai responder 'ja_processada' se o CAS já tiver rodado.
+    if ((e as { code?: string }).code !== 'P2002') throw e;
+  }
+
+  return processarPagamentoAprovado({
+    mpPaymentId:  fatura.faturaId,
+    status:       fatura.statusPagamento,
+    statusDetail: null,
+    valor:        fatura.valor,
+    moeda:        fatura.moeda,
+    liveMode:     fatura.liveMode,
+  }, agora);
+}
+
+/**
+ * Sincroniza o status local a partir do status da preapproval no gateway.
+ * O MP cancela a assinatura sozinho após 3 faturas recusadas — precisamos
+ * refletir isso. NUNCA mexe em periodoFimEm: o acesso já pago é preservado.
+ */
+export async function sincronizarStatusAssinatura(
+  mpPreapprovalId: string,
+  statusGateway: string,
+  agora: Date = new Date(),
+): Promise<{ sincronizado: boolean }> {
+  const assinatura = await prisma.assinatura.findUnique({ where: { mpPreapprovalId } });
+  if (!assinatura) return { sincronizado: false };
+
+  if (statusGateway === 'cancelled' && !assinatura.canceladaEm) {
+    await prisma.assinatura.updateMany({
+      where: { id: assinatura.id, canceladaEm: null },
+      data:  { canceladaEm: agora, status: 'CANCELADA' },
+    });
+    return { sincronizado: true };
+  }
+  return { sincronizado: false };
 }

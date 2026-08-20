@@ -3,7 +3,7 @@
  * no plano de implementação, Task 6): criação de cobrança PIX, busca do status
  * real de um pagamento, e validação da assinatura do webhook.
  */
-import { MercadoPagoConfig, Payment, WebhookSignatureValidator, InvalidWebhookSignatureError } from 'mercadopago';
+import { MercadoPagoConfig, Payment, PreApproval, Invoice, WebhookSignatureValidator, InvalidWebhookSignatureError } from 'mercadopago';
 
 function getClient(): MercadoPagoConfig {
   const accessToken = process.env.MP_ACCESS_TOKEN;
@@ -188,4 +188,131 @@ export function validarAssinaturaWebhook(input: ValidarWebhookInput): boolean {
     if (err instanceof InvalidWebhookSignatureError) return false;
     throw err;
   }
+}
+
+
+// ─── Assinatura RECORRENTE (preapproval) ──────────────────────────────────────
+// O cartão vira uma assinatura de verdade: o Mercado Pago cobra sozinho a cada
+// ciclo. Fonte: POST /preapproval com status "authorized" (docs "Subscriptions
+// with authorized payment"). É isso que o cancelamento desliga no gateway.
+
+export interface CriarAssinaturaRecorrenteInput {
+  valor: number;
+  /** Texto que o assinante vê na fatura/no painel do MP. */
+  motivo: string;
+  /** Token do cartão gerado no browser. PAN/CVV nunca passam por aqui. */
+  cardTokenId: string;
+  payerEmail: string;
+  /** Referência interna para reconciliação (id da nossa Assinatura). */
+  externalReference: string;
+  backUrl: string;
+  /**
+   * Quando a PRIMEIRA cobrança recorrente deve acontecer. Usado para não cobrar
+   * de novo quem ainda tem período pago/trial vigente: agenda o início para o
+   * fim do acesso atual. Omitido = começa agora.
+   */
+  inicioEm?: Date;
+}
+
+export interface AssinaturaRecorrenteGateway {
+  mpPreapprovalId: string;
+  /** 'authorized' | 'pending' | 'paused' | 'cancelled' */
+  status: string;
+  proximaCobranca: string | null;
+  valor: number;
+  moeda: string;
+  liveMode: boolean;
+}
+
+// next_payment_date vem como string no create/get e como number no update —
+// conferido nos .d.ts do SDK instalado. Normalizamos para string ISO.
+function mapearPreapproval(r: {
+  id?: string; status?: string; next_payment_date?: string | number; live_mode?: boolean;
+  auto_recurring?: { transaction_amount?: number; currency_id?: string };
+}): AssinaturaRecorrenteGateway {
+  if (!r.id) throw new Error('Resposta do Mercado Pago sem id de assinatura');
+  const proxima = r.next_payment_date;
+  return {
+    mpPreapprovalId: String(r.id),
+    status:          r.status ?? 'unknown',
+    proximaCobranca: proxima == null ? null : (typeof proxima === 'number' ? new Date(proxima).toISOString() : proxima),
+    valor:           r.auto_recurring?.transaction_amount ?? 0,
+    moeda:           r.auto_recurring?.currency_id ?? '',
+    liveMode:        r.live_mode === true,
+  };
+}
+
+export async function criarAssinaturaRecorrente(
+  input: CriarAssinaturaRecorrenteInput,
+): Promise<AssinaturaRecorrenteGateway> {
+  const preApproval = new PreApproval(getClient());
+  const response = await preApproval.create({
+    body: {
+      reason:             input.motivo,
+      external_reference: input.externalReference,
+      payer_email:        input.payerEmail,
+      card_token_id:      input.cardTokenId,
+      back_url:           input.backUrl,
+      // 'authorized' = o motor de assinaturas agenda e cobra sozinho.
+      status:             'authorized',
+      auto_recurring: {
+        frequency:          1,
+        frequency_type:     'months',
+        transaction_amount: input.valor,
+        currency_id:        'BRL',
+        ...(input.inicioEm ? { start_date: input.inicioEm.toISOString() } : {}),
+      },
+    },
+  });
+  return mapearPreapproval(response);
+}
+
+/** Lê a assinatura recorrente no gateway — fonte da verdade do status. */
+export async function buscarAssinaturaRecorrente(id: string): Promise<AssinaturaRecorrenteGateway> {
+  const preApproval = new PreApproval(getClient());
+  return mapearPreapproval(await preApproval.get({ id }));
+}
+
+/**
+ * Cancela a assinatura NO GATEWAY — é isto que interrompe as cobranças futuras.
+ * Idempotente do lado do MP: cancelar algo já cancelado devolve o mesmo estado.
+ */
+export async function cancelarAssinaturaRecorrente(id: string): Promise<AssinaturaRecorrenteGateway> {
+  const preApproval = new PreApproval(getClient());
+  return mapearPreapproval(await preApproval.update({ id, body: { status: 'cancelled' } }));
+}
+
+// ─── Fatura recorrente (authorized_payment) ───────────────────────────────────
+
+export interface FaturaGateway {
+  faturaId: string;
+  mpPreapprovalId: string | null;
+  /** Status da fatura ('processed', 'recycling', 'scheduled'...). */
+  status: string;
+  /** Status do PAGAMENTO da fatura — é o que decide acesso ('approved'...). */
+  statusPagamento: string;
+  valor: number;
+  moeda: string;
+}
+
+/**
+ * Busca a fatura gerada pela assinatura recorrente (topic
+ * subscription_authorized_payment -> GET /authorized_payments/{id}).
+ */
+export async function buscarFaturaRecorrente(faturaId: string): Promise<FaturaGateway> {
+  const invoice = new Invoice(getClient());
+  const r = await invoice.get({ id: faturaId }) as {
+    id?: string; preapproval_id?: string; status?: string;
+    transaction_amount?: number; currency_id?: string;
+    payment?: { status?: string };
+  };
+  if (!r.id) throw new Error('Resposta do Mercado Pago sem id de fatura');
+  return {
+    faturaId:        String(r.id),
+    mpPreapprovalId: r.preapproval_id ?? null,
+    status:          r.status ?? 'unknown',
+    statusPagamento: r.payment?.status ?? 'unknown',
+    valor:           r.transaction_amount ?? 0,
+    moeda:           r.currency_id ?? 'BRL',
+  };
 }

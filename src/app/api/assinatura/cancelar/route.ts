@@ -33,9 +33,19 @@ export async function POST() {
       return NextResponse.json({ cancelada: true, acessoAte: r.acessoAte });
     }
 
+    // Falha ao desligar no gateway é 502, não 400: NÃO marcamos como cancelada,
+    // então o cartão continuaria sendo cobrado — o usuário precisa saber que a
+    // ação não teve efeito e tentar de novo.
+    if (r.motivo === 'falha_gateway') {
+      return NextResponse.json(
+        { cancelada: false, mensagem: 'Não foi possível cancelar agora — sua assinatura segue ativa. Tente novamente em instantes.' },
+        { status: 502 },
+      );
+    }
+
     const mensagem =
-      r.motivo === 'sem_pagamento_cartao'
-        ? 'O cancelamento pelo painel está disponível para assinaturas pagas com cartão.'
+      r.motivo === 'sem_assinatura_recorrente'
+        ? 'O cancelamento pelo painel está disponível para assinaturas recorrentes pagas com cartão.'
         : r.motivo === 'sem_periodo_vigente'
         ? 'Não há assinatura vigente para cancelar.'
         : 'Assinatura não encontrada.';

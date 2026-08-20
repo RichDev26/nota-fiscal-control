@@ -10,10 +10,9 @@ import type { StatusAssinatura } from '@/types';
 /**
  * Painel de assinatura em Configurações.
  *
- * O cancelamento NÃO revoga acesso: o usuário mantém o período já pago. Como a
- * cobrança de cartão aqui é avulsa (não é uma preapproval recorrente do Mercado
- * Pago), não existe cobrança automática futura para interromper — o texto abaixo
- * diz exatamente isso, em vez de prometer o contrário.
+ * Com cartão a assinatura é RECORRENTE: o Mercado Pago cobra sozinho a cada
+ * mês. Cancelar aqui desliga a recorrência no gateway — as cobranças futuras
+ * param de verdade. O acesso já pago é preservado até o fim do período.
  */
 export default function SecaoAssinatura() {
   const [status, setStatus]         = useState<StatusAssinatura | null>(null);
@@ -131,7 +130,7 @@ export default function SecaoAssinatura() {
 
         {status?.periodoFimEm && (
           <div className="flex justify-between">
-            <span className="text-sm text-gray-500">{status.canceladaEm ? 'Acesso até' : 'Renova em'}</span>
+            <span className="text-sm text-gray-500">{status.canceladaEm ? 'Acesso até' : 'Próxima cobrança'}</span>
             <span className="text-sm font-medium text-gray-900">{formatarData(status.periodoFimEm)}</span>
           </div>
         )}
@@ -149,8 +148,8 @@ export default function SecaoAssinatura() {
       {/* ── Ação ── */}
       {status?.canceladaEm ? (
         <p className="text-xs text-gray-400 leading-relaxed border-t border-gray-50 pt-4">
-          Renovação cancelada em {formatarData(status.canceladaEm)}. Você mantém o acesso até o fim do
-          período já pago e não faremos nenhuma cobrança nova. Para voltar, é só assinar de novo quando quiser.
+          Assinatura cancelada em {formatarData(status.canceladaEm)}. Não haverá novas cobranças no seu
+          cartão. Você mantém o acesso até o fim do período já pago e, para voltar, é só assinar de novo.
         </p>
       ) : status?.podeCancelar ? (
         <div className="border-t border-gray-50 pt-4">
@@ -162,14 +161,15 @@ export default function SecaoAssinatura() {
             <XCircle size={16} /> Cancelar assinatura
           </button>
           <p className="text-xs text-gray-400 mt-2.5 leading-relaxed">
-            Você continua com acesso até {acessoAte}. Sem multa e sem cobrança nova.
+            Cancelar interrompe as cobranças automáticas no seu cartão. Você continua com acesso
+            até {acessoAte}, sem multa.
           </p>
         </div>
       ) : (
         <p className="text-xs text-gray-400 leading-relaxed border-t border-gray-50 pt-4">
           {status?.metodoUltimoPagamento === 'PIX'
-            ? 'Seu último pagamento foi via PIX. Como o PIX é avulso, não há renovação automática para cancelar — se você não pagar de novo, o acesso simplesmente encerra no fim do período.'
-            : 'O cancelamento pelo painel fica disponível para assinaturas pagas com cartão de crédito.'}
+            ? 'Seu último pagamento foi via PIX, que é avulso — não há cobrança automática para cancelar. Se não pagar de novo, o acesso encerra no fim do período. Para renovação automática, assine com cartão.'
+            : 'O cancelamento pelo painel fica disponível para assinaturas recorrentes pagas com cartão de crédito.'}
         </p>
       )}
 
@@ -199,8 +199,9 @@ export default function SecaoAssinatura() {
               Cancelar assinatura?
             </h3>
             <p className="text-sm text-gray-500 mt-2 leading-relaxed">
-              Você continua com acesso normal até <strong className="text-gray-800">{acessoAte}</strong>.
-              Depois dessa data o acesso encerra e nada é cobrado. Nenhum dado seu é apagado.
+              As cobranças automáticas no seu cartão serão interrompidas. Você continua com acesso
+              normal até <strong className="text-gray-800">{acessoAte}</strong> — depois dessa data o
+              acesso encerra e nada mais é cobrado. Nenhum dado seu é apagado.
             </p>
 
             {erro && <p className="text-red-600 text-sm mt-3">{erro}</p>}

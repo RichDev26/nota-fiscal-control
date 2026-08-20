@@ -5,6 +5,9 @@ import { temAcessoAtivo } from './acesso';
 import { processarLembretesVencimento } from './lembretes';
 
 let falhas = 0;
+/** Stub do cancelamento no gateway — os testes não devem tocar o Mercado Pago. */
+const gatewayOk = async () => ({ status: 'cancelled' });
+const gatewayFalha = async () => { throw new Error('gateway indisponivel'); };
 const check = (n: string, ok: boolean, d = '') => { console.log(`${ok ? '✅' : '❌'} ${n}${d ? ' — ' + d : ''}`); if (!ok) falhas++; };
 const dia = 24 * 60 * 60 * 1000;
 
@@ -19,6 +22,8 @@ async function cenarioPago(metodo: 'CARTAO' | 'PIX', sufixo: string, diasRestant
       trialFimEm: new Date(Date.now() - 30 * dia),
       periodoFimEm: new Date(Date.now() + diasRestantes * dia),
       status: 'ATIVA',
+      // Só cartão tem assinatura recorrente no gateway; PIX é avulso.
+      mpPreapprovalId: metodo === 'CARTAO' ? `pre-${sufixo}-${Date.now()}` : null,
     },
   });
   await prisma.cobranca.create({
@@ -44,7 +49,7 @@ async function cenarioPago(metodo: 'CARTAO' | 'PIX', sufixo: string, diasRestant
       check('cartão pago → podeCancelar = true', antes.podeCancelar === true);
       check('cartão pago → metodoUltimoPagamento = CARTAO', antes.metodoUltimoPagamento === 'CARTAO');
 
-      const r = await cancelarAssinatura(usuario.id);
+      const r = await cancelarAssinatura(usuario.id, new Date(), gatewayOk);
       check('cancelamento executa', r.cancelada === true);
 
       const dep = await prisma.assinatura.findUnique({ where: { id: assinatura.id } });
@@ -59,7 +64,7 @@ async function cenarioPago(metodo: 'CARTAO' | 'PIX', sufixo: string, diasRestant
       check('status pós-cancelamento: ativo=true, podeCancelar=false', st.ativo === true && st.podeCancelar === false);
 
       // Idempotência: 2ª chamada não é erro nem altera nada.
-      const r2 = await cancelarAssinatura(usuario.id);
+      const r2 = await cancelarAssinatura(usuario.id, new Date(), gatewayOk);
       check('2ª chamada → ja_cancelada (idempotente)', r2.cancelada === false && r2.motivo === 'ja_cancelada');
       const dep2 = await prisma.assinatura.findUnique({ where: { id: assinatura.id } });
       check('canceladaEm NÃO foi sobrescrito', dep2!.canceladaEm!.getTime() === dep!.canceladaEm!.getTime());
@@ -67,7 +72,7 @@ async function cenarioPago(metodo: 'CARTAO' | 'PIX', sufixo: string, diasRestant
       // 5 cancelamentos concorrentes → só um vence.
       const { usuario: u2 } = await cenarioPago('CARTAO', 'race');
       criados.push(u2.id);
-      const rs = await Promise.all(Array.from({ length: 5 }, () => cancelarAssinatura(u2.id)));
+      const rs = await Promise.all(Array.from({ length: 5 }, () => cancelarAssinatura(u2.id, new Date(), gatewayOk)));
       check('5 cancelamentos simultâneos → exatamente 1 efetivo', rs.filter(x => x.cancelada).length === 1,
         `efetivos=${rs.filter(x => x.cancelada).length}`);
     }
@@ -78,8 +83,8 @@ async function cenarioPago(metodo: 'CARTAO' | 'PIX', sufixo: string, diasRestant
       criados.push(usuario.id);
       const st = await obterStatusParaCliente(usuario.id);
       check('PIX → podeCancelar = false', st.podeCancelar === false);
-      const r = await cancelarAssinatura(usuario.id);
-      check('PIX → cancelamento recusado com motivo correto', r.cancelada === false && r.motivo === 'sem_pagamento_cartao');
+      const r = await cancelarAssinatura(usuario.id, new Date(), gatewayOk);
+      check('PIX → cancelamento recusado (sem assinatura recorrente)', r.cancelada === false && r.motivo === 'sem_assinatura_recorrente');
     }
 
     // ── 3. Sem período vigente (nunca pagou / já venceu) não há o que cancelar ──
@@ -91,7 +96,7 @@ async function cenarioPago(metodo: 'CARTAO' | 'PIX', sufixo: string, diasRestant
       await prisma.assinatura.create({
         data: { usuarioId: usuario.id, trialFimEm: new Date(Date.now() + 5 * dia) },
       });
-      const r = await cancelarAssinatura(usuario.id);
+      const r = await cancelarAssinatura(usuario.id, new Date(), gatewayOk);
       check('em trial (sem período pago) → recusado', r.cancelada === false && r.motivo === 'sem_periodo_vigente');
     }
 
@@ -101,8 +106,23 @@ async function cenarioPago(metodo: 'CARTAO' | 'PIX', sufixo: string, diasRestant
         data: { email: `cancel-sem-${Date.now()}@exemplo.com`, senhaHash: 'x', nome: 'Sem Assinatura' },
       });
       criados.push(usuario.id);
-      const r = await cancelarAssinatura(usuario.id);
+      const r = await cancelarAssinatura(usuario.id, new Date(), gatewayOk);
       check('sem assinatura → recusado', r.cancelada === false && r.motivo === 'sem_assinatura');
+    }
+
+    // ── 4b. Falha no gateway NÃO pode marcar como cancelada ──
+    // Se marcássemos local e o MP seguisse cobrando, o usuário acharia que
+    // cancelou e continuaria sendo debitado — o pior resultado possível.
+    {
+      const { usuario, assinatura } = await cenarioPago('CARTAO', 'gwfail');
+      criados.push(usuario.id);
+      const r = await cancelarAssinatura(usuario.id, new Date(), gatewayFalha);
+      check('gateway falhou → cancelamento recusado', r.cancelada === false && r.motivo === 'falha_gateway');
+      const dep = await prisma.assinatura.findUnique({ where: { id: assinatura.id } });
+      check('gateway falhou → NÃO marcou canceladaEm', dep!.canceladaEm === null);
+      check('gateway falhou → status segue ATIVA', dep!.status === 'ATIVA');
+      const st = await obterStatusParaCliente(usuario.id);
+      check('gateway falhou → ainda mostra podeCancelar (usuário pode tentar de novo)', st.podeCancelar === true);
     }
 
     // ── 5. Cancelado deixa de receber lembrete de renovação ──
@@ -117,7 +137,7 @@ async function cenarioPago(metodo: 'CARTAO' | 'PIX', sufixo: string, diasRestant
 
       // Zera o lembrete para o 2º sweep poder recontar a mesma assinatura.
       await prisma.assinatura.updateMany({ where: { usuarioId: usuario.id }, data: { lembreteEnviadoEm: null } });
-      await cancelarAssinatura(usuario.id);
+      await cancelarAssinatura(usuario.id, new Date(), gatewayOk);
 
       const depois = await processarLembretesVencimento();
       check('depois de cancelar, o sweep NÃO considera mais', depois.verificadas < antes.verificadas,

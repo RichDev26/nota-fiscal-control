@@ -3,11 +3,12 @@ import { randomUUID } from 'crypto';
 import { getSession } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { validarCpfCnpj } from '@/lib/validators';
-import { criarPagamentoCartao } from '@/lib/payments/mercadopago';
+import { criarAssinaturaRecorrente } from '@/lib/payments/mercadopago';
 import { mensagemErroCartao } from '@/lib/payments/erros-cartao';
 import { checkPagamentoRateLimit } from '@/lib/payments/rate-limit-pagamento';
 import { processarPagamentoAprovado } from '@/lib/assinatura/servico';
 import { resolverPlano } from '@/lib/assinatura/config';
+import { temAcessoAtivo } from '@/lib/assinatura/acesso';
 import { logError, logInfo } from '@/lib/extractors/logger';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,17 @@ const MSG_EM_VERIFICACAO =
   'Seu pagamento foi recebido e está em verificação. Se o acesso não for liberado em alguns minutos, fale com o suporte — não tente pagar novamente.';
 
 /**
- * Cobrança com cartão — síncrona.
+ * Adesão à assinatura RECORRENTE com cartão.
+ *
+ * Cria uma preapproval no Mercado Pago (POST /preapproval, status=authorized):
+ * a partir daí o MP cobra o cartão sozinho a cada mês, e o cancelamento
+ * (PUT /preapproval/{id} status=cancelled) é o que interrompe as cobranças.
+ *
+ * IMPORTANTE — o acesso NÃO é liberado por ter criado a assinatura. Criar a
+ * preapproval não é dinheiro confirmado. O acesso só é concedido quando a
+ * FATURA recorrente (authorized_payment) é efetivamente paga, o que chega pelo
+ * webhook subscription_authorized_payment e passa pelo mesmo núcleo
+ * processarPagamentoAprovado de sempre. O frontend faz polling do status.
  *
  * FRONTEIRA DE CONFIANÇA: do corpo da requisição usamos APENAS
  *   - planoId  → resolvido contra o catálogo server-side (preço nunca vem do cliente)
@@ -166,144 +177,93 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  let pagamento;
+  // Se o usuário ainda tem acesso vigente (trial ou período já pago), a primeira
+  // cobrança recorrente é agendada para quando esse acesso terminar — não faz
+  // sentido cobrar de novo por um período que ele já tem.
+  const acessoAtualAte =
+    assinatura.periodoFimEm && assinatura.periodoFimEm > new Date() ? assinatura.periodoFimEm
+    : assinatura.trialFimEm > new Date()                            ? assinatura.trialFimEm
+    : null;
+
+  const origem = req.nextUrl.origin;
+
+  let recorrente;
   try {
-    pagamento = await criarPagamentoCartao({
+    recorrente = await criarAssinaturaRecorrente({
       valor:             plano.valor,
-      descricao:         plano.descricao,
-      idempotencyKey,
-      token,
-      installments,
-      paymentMethodId,
-      issuerId,
+      motivo:            plano.descricao,
+      cardTokenId:       token,
       payerEmail:        usuario.email,
-      payerCpfCnpj:      cpfCnpj,
-      externalReference: cobranca.id,
+      externalReference: assinatura.id,
+      backUrl:           `${origem}/configuracoes`,
+      inicioEm:          acessoAtualAte ?? undefined,
     });
   } catch (err) {
-    // Gateway indisponível / timeout / resposta inválida — indistinguível
-    // localmente de "o Mercado Pago capturou mas a resposta não chegou".
-    // Mantém a cobrança PROCESSANDO (nunca FALHA): FALHA é terminal e leria
-    // como "nada foi cobrado", quando pode não ser o caso. PROCESSANDO deixa
-    // o webhook reconciliar depois, e o guard acima bloqueia retry por 2min
-    // enquanto não sabemos se o dinheiro foi debitado. Segue falhando fechado
-    // (nenhum acesso concedido aqui).
-    logError('assinatura.cartao', `Falha ao criar pagamento com cartão (cobranca ${cobranca.id})`, err as Error,
+    // Gateway indisponível / recusa na validação do cartão / resposta inválida.
+    // Falha fechada: nenhum acesso concedido, cobrança segue PROCESSANDO para
+    // o webhook reconciliar caso o MP tenha criado algo do outro lado.
+    logError('assinatura.cartao', `Falha ao criar assinatura recorrente (cobranca ${cobranca.id})`, err as Error,
       { cobrancaId: cobranca.id, idempotencyKey });
     return NextResponse.json(
-      { aprovado: false, mensagem: 'Não foi possível confirmar seu pagamento agora. Aguarde alguns minutos antes de tentar novamente — evite tentar de novo imediatamente.' },
+      { aprovado: false, mensagem: 'Não foi possível concluir a assinatura agora. Confira os dados do cartão e tente novamente em instantes.' },
       { status: 502 },
     );
   }
 
   try {
-    // Vincula o pagamento do gateway à nossa cobrança e guarda só metadados
-    // não-sensíveis (últimos 4 dígitos e bandeira vêm da RESPOSTA do gateway).
+    // Vincula a preapproval à assinatura e à cobrança. É por mpPreapprovalId que
+    // o webhook das faturas recorrentes vai encontrar de quem é o pagamento.
+    await prisma.assinatura.update({
+      where: { id: assinatura.id },
+      data: { mpPreapprovalId: recorrente.mpPreapprovalId, valorRecorrente: plano.valor, canceladaEm: null },
+    });
     await prisma.cobranca.update({
       where: { id: cobranca.id },
-      data: {
-        mpPaymentId:    pagamento.mpPaymentId,
-        statusDetalhe:  pagamento.statusDetail,
-        ultimosDigitos: pagamento.ultimosDigitos,
-        bandeira:       pagamento.bandeira,
-      },
+      data: { mpPreapprovalId: recorrente.mpPreapprovalId, statusDetalhe: recorrente.status },
     });
 
-    // ── DECISÃO: delegada ao núcleo, que revalida status/valor/moeda/ambiente
-    // e é idempotente contra o webhook do mesmo pagamento. ──
-    const resultado = await processarPagamentoAprovado(pagamento);
-
-    logInfo('assinatura.cartao', 'Pagamento com cartão processado', {
+    logInfo('assinatura.cartao', 'Assinatura recorrente criada', {
       cobrancaId: cobranca.id,
-      status: pagamento.status,
-      processado: resultado.processado,
-      motivo: resultado.motivo,
+      preapprovalId: recorrente.mpPreapprovalId,
+      status: recorrente.status,
+      proximaCobranca: recorrente.proximaCobranca,
     });
 
-    if (resultado.processado) {
-      return NextResponse.json({ aprovado: true });
-    }
-
-    // Não aprovado: registra o estado real e devolve mensagem segura.
-    // 'ja_processada' significa que o webhook chegou primeiro — o acesso JÁ está
-    // liberado, então para o usuário isso é sucesso.
-    if (resultado.motivo === 'ja_processada') {
-      return NextResponse.json({ aprovado: true });
-    }
-
-    // 'conflito_concorrencia': as 3 tentativas de retry do CAS perderam a corrida.
-    // A cobrança pode ter sido de fato aprovada no gateway — não sabemos se outra
-    // execução venceu ou se todas colidiram. Isto NÃO é uma recusa: reportar como
-    // falha aqui seria mentir (o cartão pode já ter sido debitado), e marcar a
-    // cobrança como REJEITADA fecharia a porta para o webhook completá-la depois.
-    // Portanto: não tocamos no status da cobrança (fica como o CAS deixou —
-    // PENDENTE/PROCESSANDO — para o webhook do mesmo pagamento processar em
-    // seguida) e devolvemos uma mensagem de "em processamento" ao usuário.
-    if (resultado.motivo === 'conflito_concorrencia') {
+    // status 'authorized' = MP aceitou o cartão e vai cobrar no ciclo. Ainda
+    // NÃO é dinheiro confirmado desta competência — quem libera acesso é a
+    // fatura paga, via webhook.
+    if (recorrente.status !== 'authorized') {
+      await prisma.cobranca.updateMany({
+        where: { id: cobranca.id, status: 'PROCESSANDO' },
+        data: { status: 'REJEITADA' },
+      });
       return NextResponse.json({
         aprovado: false,
-        mensagem: mensagemErroCartao('in_process', null),
+        mensagem: mensagemErroCartao('rejected', null),
       });
     }
 
-    // O gateway APROVOU a cobrança (dinheiro capturado) mas o núcleo recusou
-    // conceder acesso (valor/moeda/ambiente divergente). NUNCA convidar a
-    // tentar de novo — isso duplicaria a cobrança em cima de um cliente que
-    // já pagou. Loga em ERROR para alguém ser avisado (ex.: MP_ACCESS_TOKEN
-    // de teste em produção faria TODA cobrança cair aqui).
-    if (pagamento.status === 'approved') {
-      logError('assinatura.cartao', `Pagamento aprovado NAO concedeu acesso: ${resultado.motivo}`, undefined,
-        { cobrancaId: cobranca.id, mpPaymentId: pagamento.mpPaymentId, motivo: resultado.motivo });
-      return NextResponse.json({ aprovado: false, mensagem: MSG_EM_VERIFICACAO });
-    }
-
-    const statusFinal =
-      pagamento.status === 'rejected'  ? 'REJEITADA' :
-      pagamento.status === 'cancelled' ? 'CANCELADA' :
-      'PENDENTE';
-
-    // Write CONDICIONAL: só avança se a linha ainda estiver PROCESSANDO (ou
-    // seja, ainda é "nossa" para mover). Sem esta guarda, um write
-    // incondicional poderia sobrescrever um APROVADA que o webhook do MESMO
-    // pagamento já tenha aplicado via CAS (processarPagamentoAprovado) na
-    // janela entre aquele CAS e este ponto — voltando a cobrança para
-    // PENDENTE e deixando o próximo delivery do webhook rodar o CAS de novo,
-    // concedendo um segundo período de acesso de graça.
-    const rStatus = await prisma.cobranca.updateMany({
-      where: { id: cobranca.id, status: 'PROCESSANDO' },
-      data: { status: statusFinal },
-    });
-    if (rStatus.count === 0) {
-      logError('assinatura.cartao', 'Status final nao aplicado (linha ja nao estava PROCESSANDO)', undefined,
-        { cobrancaId: cobranca.id, statusFinal, mpPaymentId: pagamento.mpPaymentId });
-    }
+    // Se o usuário já tinha acesso vigente, a assinatura entra em vigor sem
+    // interrupção e ele continua liberado agora mesmo.
+    const jaTemAcesso = temAcessoAtivo(assinatura);
 
     return NextResponse.json({
-      aprovado: false,
-      mensagem: mensagemErroCartao(pagamento.status, pagamento.statusDetail),
+      aprovado: jaTemAcesso,
+      assinaturaCriada: true,
+      aguardandoConfirmacao: !jaTemAcesso,
+      proximaCobranca: recorrente.proximaCobranca,
+      mensagem: jaTemAcesso
+        ? 'Assinatura ativada. A partir de agora a renovação é automática.'
+        : 'Assinatura criada. Estamos confirmando o pagamento — seu acesso é liberado automaticamente em instantes.',
     });
   } catch (err) {
-    // Qualquer exceção daqui em diante acontece DEPOIS da captura no gateway
-    // (pool esgotado, lock do SQLite, blip de conexão...). Loga cobrancaId +
-    // mpPaymentId juntos para a cobrança ser sempre reconciliável a partir
-    // dos logs, mesmo que mpPaymentId não tenha sido persistido no banco por
-    // causa deste mesmo erro.
-    //
-    // A mensagem NÃO pode ser a mesma em todo caminho: se o gateway não
-    // capturou (ex.: cartão recusado) e o erro só aconteceu na escrita local
-    // do status final, dizer "pagamento recebido, não tente de novo" mente
-    // para um cliente que não pagou nada e o deixa sem meio de tentar de
-    // novo. Só quando sabemos que o MP aprovou é seguro (e necessário) travar
-    // o retry — e nesse caso o status HTTP também muda para 202: uma falha
-    // interna depois de uma captura real não pode passar por um 200
-    // silencioso, senão fica invisível para alertas de 4xx/5xx.
-    logError('assinatura.cartao', `Falha pós-captura ao processar pagamento com cartão (cobranca ${cobranca.id})`, err as Error,
-      { cobrancaId: cobranca.id, mpPaymentId: pagamento.mpPaymentId });
-    return NextResponse.json({
-      aprovado: false,
-      mensagem: pagamento.status === 'approved'
-        ? MSG_EM_VERIFICACAO
-        : mensagemErroCartao(pagamento.status, pagamento.statusDetail),
-    }, { status: pagamento.status === 'approved' ? 202 : 200 });
+    // Exceção DEPOIS de a assinatura existir no gateway. Nunca dizer que falhou:
+    // o cartão pode já ter sido debitado e a recorrência está de pé.
+    logError('assinatura.cartao', `Falha pos-criacao da assinatura recorrente (cobranca ${cobranca.id})`, err as Error,
+      { cobrancaId: cobranca.id, preapprovalId: recorrente.mpPreapprovalId });
+    return NextResponse.json(
+      { aprovado: false, mensagem: MSG_EM_VERIFICACAO },
+      { status: 202 },
+    );
   }
 }

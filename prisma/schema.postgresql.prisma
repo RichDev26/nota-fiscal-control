@@ -330,6 +330,14 @@ model Assinatura {
   // pago (temAcessoAtivo continua olhando só as datas). Serve para parar os
   // lembretes de renovação e registrar a decisão.
   canceladaEm       DateTime?
+  // Assinatura recorrente no Mercado Pago (POST /preapproval). É o que faz o
+  // cartão ser cobrado automaticamente todo mês, e o que o cancelamento
+  // desliga no gateway (PUT /preapproval/{id} status=cancelled).
+  mpPreapprovalId   String?    @unique
+  // Valor com que a recorrência foi contratada no gateway. As faturas são
+  // conferidas contra ESTE valor, não contra o preço atual do catálogo —
+  // senão um reajuste futuro passaria a recusar as faturas de quem já assinou.
+  valorRecorrente   Float?
   usuario           Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   cobrancas         Cobranca[]
   createdAt         DateTime   @default(now())
@@ -349,6 +357,9 @@ model Cobranca {
   statusDetalhe  String?                        // status_detail do gateway (ex: cc_rejected_high_risk)
   processadaEm   DateTime?                      // quando o acesso foi efetivamente concedido
   mpPaymentId    String?    @unique
+  // Fatura recorrente (authorized_payment) que originou esta cobrança.
+  // Para cobranças avulsas (PIX) fica null.
+  mpPreapprovalId String?
   idempotencyKey String     @unique
   qrCode         String?
   qrCodeBase64   String?
@@ -364,6 +375,7 @@ model Cobranca {
 
   @@index([status])
   @@index([assinaturaId, status])
+  @@index([mpPreapprovalId])
 }
 
 // ─── Backup de arquivos enviados (anexos) ──────────────────────────────────────

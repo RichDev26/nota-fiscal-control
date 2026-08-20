@@ -104,7 +104,7 @@ interface Props { onAprovado: () => void }
 // 'falha_conexao': fetch lançou (rede caiu) — backend pode já ter capturado
 // a cobrança sem a resposta chegar até nós. Terminal, sem retry direto, para
 // nunca cobrar duas vezes em cima de um status que não conhecemos.
-type Estado = 'carregando_sdk' | 'montando_form' | 'pronto' | 'processando' | 'erro' | 'bloqueado' | 'sessao_expirada' | 'falha_conexao';
+type Estado = 'carregando_sdk' | 'montando_form' | 'pronto' | 'processando' | 'erro' | 'bloqueado' | 'sessao_expirada' | 'falha_conexao' | 'aguardando_confirmacao';
 
 const FORM_ID = 'form-cartao';
 const ID = (campo: string) => `${FORM_ID}__${campo}`;
@@ -160,11 +160,25 @@ export default function FormularioCartao({ onAprovado }: Props) {
       return;
     }
 
-    let d: { aprovado?: boolean; mensagem?: string; precisaCpfCnpj?: boolean } = {};
+    let d: {
+      aprovado?: boolean; mensagem?: string; precisaCpfCnpj?: boolean;
+      assinaturaCriada?: boolean; aguardandoConfirmacao?: boolean;
+    } = {};
     try { d = await r.json(); } catch { /* corpo vazio/ inválido: trata como falha genérica abaixo */ }
 
-    // ÚNICO caminho de sucesso do componente: o backend afirmou aprovado.
+    // ÚNICO caminho de sucesso imediato: o backend afirmou aprovado.
     if (r.ok && d.aprovado === true) { enviandoRef.current = false; onAprovado(); return; }
+
+    // Assinatura recorrente criada, mas o acesso ainda depende da PRIMEIRA
+    // fatura ser paga (chega pelo webhook). Não é sucesso nem recusa: entra em
+    // espera e faz polling do status real no backend. Continua valendo a regra
+    // central — só liberamos quando o backend disser que o acesso está ativo.
+    if (r.ok && d.assinaturaCriada === true && d.aguardandoConfirmacao === true) {
+      setErro('');
+      setEstado('aguardando_confirmacao');
+      enviandoRef.current = false;
+      return;
+    }
 
     // HTTP 202: dinheiro capturado, nosso registro pós-captura falhou. Terminal —
     // NUNCA oferecer retry (cobraria de novo em cima de quem já pagou).
@@ -182,6 +196,22 @@ export default function FormularioCartao({ onAprovado }: Props) {
     setEstado('pronto');
     enviandoRef.current = false;
   }, [onAprovado]);
+
+  // Enquanto a 1ª fatura da assinatura recorrente não é confirmada, consulta o
+  // backend periodicamente. Só o backend decide se há acesso — o componente
+  // apenas reage ao que ele responde.
+  useEffect(() => {
+    if (estado !== 'aguardando_confirmacao') return;
+    const id = setInterval(async () => {
+      try {
+        const r = await fetch('/api/assinatura/status');
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.ativo === true) { clearInterval(id); onAprovado(); }
+      } catch { /* tenta de novo no próximo tick */ }
+    }, 4000);
+    return () => clearInterval(id);
+  }, [estado, onAprovado]);
 
   // Carrega o SDK oficial uma única vez e instancia o objeto MercadoPago.
   useEffect(() => {
@@ -281,6 +311,19 @@ export default function FormularioCartao({ onAprovado }: Props) {
 
   if (estado === 'bloqueado') {
     return <p className="text-gray-700 text-sm text-center py-6">{erro}</p>;
+  }
+
+  if (estado === 'aguardando_confirmacao') {
+    return (
+      <div className="text-center py-8">
+        <div className="w-7 h-7 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="font-semibold text-gray-800">Confirmando seu pagamento...</p>
+        <p className="text-sm text-gray-500 mt-2 leading-relaxed">
+          Sua assinatura foi criada e a renovação passa a ser automática. Assim que o pagamento for
+          confirmado, seu acesso é liberado aqui mesmo — não é preciso pagar de novo.
+        </p>
+      </div>
+    );
   }
 
   if (estado === 'sessao_expirada' || estado === 'falha_conexao') {
