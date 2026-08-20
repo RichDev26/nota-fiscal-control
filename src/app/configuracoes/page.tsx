@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Settings, User, Lock, Check, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useSession } from '@/context/SessionContext';
+import SecaoAssinatura from '@/components/assinatura/SecaoAssinatura';
 
 function Alert({ type, msg }: { type: 'ok' | 'err'; msg: string }) {
   const base = 'flex items-center gap-2 rounded-xl p-3.5 text-sm mb-4';
@@ -196,6 +197,9 @@ export default function ConfiguracoesPage() {
       </div>
 
       {/* ── Info da conta ── */}
+      {/* ── Assinatura ── */}
+      <SecaoAssinatura />
+
       <div className="card p-5">
         <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Conta</p>
         {loading ? (

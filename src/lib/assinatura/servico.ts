@@ -170,10 +170,74 @@ export async function processarPagamentoAprovado(
 export async function obterStatusParaCliente(usuarioId: string): Promise<StatusAssinatura> {
   const assinatura = await prisma.assinatura.findUnique({ where: { usuarioId } });
   const ativo = temAcessoAtivo(assinatura);
+
+  // Método da última cobrança efetivamente aprovada — define se há o que cancelar.
+  const ultimaAprovada = assinatura
+    ? await prisma.cobranca.findFirst({
+        where: { assinaturaId: assinatura.id, status: 'APROVADA' },
+        orderBy: { processadaEm: 'desc' },
+        select: { metodo: true },
+      })
+    : null;
+
+  // Só cartão: PIX é avulso, não há cobrança futura para interromper. E só faz
+  // sentido cancelar enquanto ainda existe período pago vigente.
+  const podeCancelar =
+    ultimaAprovada?.metodo === 'CARTAO' &&
+    !assinatura?.canceladaEm &&
+    !!assinatura?.periodoFimEm &&
+    assinatura.periodoFimEm > new Date();
+
   return {
     ativo,
     motivo: ativo ? null : (!assinatura?.periodoFimEm ? 'trial_expirado' : 'assinatura_vencida'),
     trialFimEm: assinatura?.trialFimEm ?? null,
     periodoFimEm: assinatura?.periodoFimEm ?? null,
+    metodoUltimoPagamento: ultimaAprovada?.metodo ?? null,
+    podeCancelar,
+    canceladaEm: assinatura?.canceladaEm ?? null,
   };
+}
+
+export interface ResultadoCancelamento {
+  cancelada: boolean;
+  motivo?: 'sem_assinatura' | 'sem_pagamento_cartao' | 'ja_cancelada' | 'sem_periodo_vigente';
+  acessoAte?: Date;
+}
+
+/**
+ * Cancela a renovação da assinatura.
+ *
+ * NÃO revoga acesso: o usuário mantém o período que já pagou (temAcessoAtivo
+ * continua decidindo só pelas datas). O efeito real é parar os lembretes de
+ * renovação e registrar a decisão.
+ *
+ * Nota honesta: a cobrança de cartão aqui é AVULSA (payment.create), não uma
+ * preapproval recorrente do Mercado Pago — então não existe cobrança futura
+ * automática para interromper. Nada é chamado no gateway.
+ *
+ * Idempotente: cancelar duas vezes não muda nada e não é erro para o usuário.
+ */
+export async function cancelarAssinatura(usuarioId: string, agora: Date = new Date()): Promise<ResultadoCancelamento> {
+  const assinatura = await prisma.assinatura.findUnique({ where: { usuarioId } });
+  if (!assinatura) return { cancelada: false, motivo: 'sem_assinatura' };
+  if (assinatura.canceladaEm) return { cancelada: false, motivo: 'ja_cancelada', acessoAte: assinatura.periodoFimEm ?? undefined };
+  if (!assinatura.periodoFimEm || assinatura.periodoFimEm <= agora) {
+    return { cancelada: false, motivo: 'sem_periodo_vigente' };
+  }
+
+  const pagouCartao = await prisma.cobranca.findFirst({
+    where: { assinaturaId: assinatura.id, status: 'APROVADA', metodo: 'CARTAO' },
+    select: { id: true },
+  });
+  if (!pagouCartao) return { cancelada: false, motivo: 'sem_pagamento_cartao' };
+
+  // Guardado por canceladaEm: null — dois cliques simultâneos só cancelam uma vez.
+  const upd = await prisma.assinatura.updateMany({
+    where: { id: assinatura.id, canceladaEm: null },
+    data: { canceladaEm: agora, status: 'CANCELADA' },
+  });
+  if (upd.count === 0) return { cancelada: false, motivo: 'ja_cancelada', acessoAte: assinatura.periodoFimEm };
+
+  return { cancelada: true, acessoAte: assinatura.periodoFimEm };
 }

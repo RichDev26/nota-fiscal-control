@@ -326,6 +326,10 @@ model Assinatura {
   trialFimEm        DateTime
   periodoFimEm      DateTime?
   lembreteEnviadoEm DateTime?
+  // Intenção de cancelamento. NÃO revoga acesso: o usuário mantém o período já
+  // pago (temAcessoAtivo continua olhando só as datas). Serve para parar os
+  // lembretes de renovação e registrar a decisão.
+  canceladaEm       DateTime?
   usuario           Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   cobrancas         Cobranca[]
   createdAt         DateTime   @default(now())
