@@ -10,6 +10,16 @@ interface Props {
   motivo: 'trial_expirado' | 'assinatura_vencida';
 }
 
+/**
+ * Interruptor do cartao: sem chave publica do Mercado Pago nao ha como
+ * tokenizar, entao a opcao simplesmente nao e oferecida — nada de botao que
+ * leva a um formulario quebrado. Serve tambem como kill switch de deploy:
+ * enquanto o webhook de "Planos e assinaturas" nao estiver configurado no
+ * painel do MP, basta nao publicar a variavel e so o PIX fica exposto.
+ * (NEXT_PUBLIC_* e inlinado no build — ligar/desligar exige redeploy.)
+ */
+const CARTAO_DISPONIVEL = Boolean(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY);
+
 export default function TelaBloqueio({ motivo }: Props) {
   const router = useRouter();
   const [etapa, setEtapa]                   = useState<'inicial' | 'checkout' | 'qrcode' | 'cartao'>('inicial');
@@ -104,18 +114,23 @@ export default function TelaBloqueio({ motivo }: Props) {
               {carregando ? 'Gerando...' : `${textoBotao} com PIX`}
             </button>
             <p className="text-gray-400 text-xs mt-4 mb-4">Pagamento via PIX · confirmação automática</p>
-            <button
-              type="button"
-              onClick={() => setEtapa('cartao')}
-              className="w-full border border-gray-200 text-gray-700 font-semibold rounded-xl py-3 hover:bg-gray-50"
-            >
-              Pagar com cartão
-            </button>
+            {CARTAO_DISPONIVEL && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setEtapa('cartao')}
+                  className="w-full border border-gray-200 text-gray-700 font-semibold rounded-xl py-3 hover:bg-gray-50"
+                >
+                  Pagar com cartão
+                </button>
+                <p className="text-gray-400 text-xs mt-3">Assinatura mensal · renova sozinha · cancele quando quiser</p>
+              </>
+            )}
           </div>
         )}
 
         {/* ── Etapa cartão: tokenização no cliente, decisão sempre do backend ── */}
-        {etapa === 'cartao' && (
+        {etapa === 'cartao' && CARTAO_DISPONIVEL && (
           <div>
             <button
               type="button"
