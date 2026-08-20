@@ -4,6 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { obterJob, cancelarJob } from '@/lib/fila/fila-manager';
+import { requireFilaAdmin } from '@/lib/fila/auth-admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireFilaAdmin();
+  if ('error' in auth) return auth.error;
+
   try {
     const job = await obterJob(params.id);
     if (!job) return NextResponse.json({ error: 'Job não encontrado' }, { status: 404 });
@@ -25,6 +29,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireFilaAdmin();
+  if ('error' in auth) return auth.error;
+
   try {
     const body = await req.json().catch(() => ({}));
     const motivo = typeof body.motivo === 'string' ? body.motivo : 'Cancelado via API';

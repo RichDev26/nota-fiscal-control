@@ -310,6 +310,11 @@ export interface StatusAssinatura {
   motivo: 'trial_expirado' | 'assinatura_vencida' | null;
   trialFimEm: Date | string | null;
   periodoFimEm: Date | string | null;
+  /** Método da última cobrança APROVADA ('CARTAO' | 'PIX'), ou null se nunca pagou. */
+  metodoUltimoPagamento: string | null;
+  /** Só quem pagou com cartão pode cancelar (ver POST /api/assinatura/cancelar). */
+  podeCancelar: boolean;
+  canceladaEm: Date | string | null;
 }
 
 export interface FiltrosNota {

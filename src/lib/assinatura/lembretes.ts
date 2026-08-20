@@ -25,6 +25,8 @@ export async function processarLembretesVencimento(agora: Date = new Date()): Pr
     where: {
       periodoFimEm: { not: null, lte: limite, gt: agora },
       lembreteEnviadoEm: null,
+      // Quem cancelou não deve receber lembrete de renovação.
+      canceladaEm: null,
     },
     include: { usuario: { select: { email: true, nome: true } } },
   });
