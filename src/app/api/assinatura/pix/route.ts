@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   let cpfCnpj = usuario.cpfCnpj;
   if (!cpfCnpj) {
-    if (!body.cpfCnpj || !validarCpfCnpj(body.cpfCnpj)) {
+    if (typeof body.cpfCnpj !== 'string' || !validarCpfCnpj(body.cpfCnpj)) {
       return NextResponse.json({ error: 'Informe um CPF ou CNPJ válido para gerar o PIX.', precisaCpfCnpj: true }, { status: 400 });
     }
     cpfCnpj = body.cpfCnpj.replace(/\D/g, '');

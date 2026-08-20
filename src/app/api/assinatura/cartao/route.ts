@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { getSession } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { validarCpfCnpj } from '@/lib/validators';
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
   // unique local — mas a idempotência do MP sobre o mesmo token de cartão
   // cobre o caso comum, e a janela cai de "qualquer concorrência" para um
   // instante específico de poucos milissegundos.
-  const idempotencyKey = `cartao:${assinatura.id}:${Math.floor(Date.now() / 120_000)}`;
+  let idempotencyKey = `cartao:${assinatura.id}:${Math.floor(Date.now() / 120_000)}`;
   let cobranca;
   try {
     cobranca = await prisma.cobranca.create({
@@ -137,13 +138,32 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (e) {
-    if ((e as { code?: string }).code === 'P2002') {
+    if ((e as { code?: string }).code !== 'P2002') throw e;
+    const anterior = await prisma.cobranca.findUnique({ where: { idempotencyKey } });
+    // Só uma recusa TERMINAL libera nova tentativa dentro da mesma janela: nesses
+    // estados nada foi capturado. PROCESSANDO/APROVADA seguem em 409 — é isso que
+    // impede duplo clique e duplo período.
+    if (anterior?.status !== 'REJEITADA' && anterior?.status !== 'CANCELADA') {
       return NextResponse.json(
         { aprovado: false, mensagem: 'Já existe um pagamento em processamento. Aguarde alguns instantes antes de tentar novamente.' },
         { status: 409 },
       );
     }
-    throw e;
+    // Chave NOVA e obrigatória: reusar a anterior faria o Mercado Pago devolver o
+    // resultado cacheado da recusa, e o novo cartão nunca seria cobrado.
+    idempotencyKey = `${idempotencyKey}:${randomUUID()}`;
+    cobranca = await prisma.cobranca.create({
+      data: {
+        assinaturaId: assinatura.id,
+        metodo:       'CARTAO',
+        planoId:      plano.id,
+        valor:        plano.valor,
+        moeda:        plano.moeda,
+        status:       'PROCESSANDO',
+        parcelas:     installments,
+        idempotencyKey,
+      },
+    });
   }
 
   let pagamento;
@@ -249,10 +269,14 @@ export async function POST(req: NextRequest) {
     // janela entre aquele CAS e este ponto — voltando a cobrança para
     // PENDENTE e deixando o próximo delivery do webhook rodar o CAS de novo,
     // concedendo um segundo período de acesso de graça.
-    await prisma.cobranca.updateMany({
+    const rStatus = await prisma.cobranca.updateMany({
       where: { id: cobranca.id, status: 'PROCESSANDO' },
       data: { status: statusFinal },
     });
+    if (rStatus.count === 0) {
+      logError('assinatura.cartao', 'Status final nao aplicado (linha ja nao estava PROCESSANDO)', undefined,
+        { cobrancaId: cobranca.id, statusFinal, mpPaymentId: pagamento.mpPaymentId });
+    }
 
     return NextResponse.json({
       aprovado: false,
