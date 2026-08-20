@@ -83,7 +83,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ cobrancaId: cobranca.id, qrCode: resultado.qrCode, qrCodeBase64: resultado.qrCodeBase64 });
   } catch (err) {
     logError('assinatura.pix', `Falha ao criar cobrança PIX para usuário ${usuario.id}`, err as Error);
-    await prisma.cobranca.update({ where: { id: cobranca.id }, data: { status: 'REJEITADA' } });
+    // Guardado por status: é o único write de status que restava sem predicado.
+    // Se o mpPaymentId já tiver sido gravado e o webhook houver aprovado, não
+    // podemos rebaixar a linha e fechar o CAS contra um QR que existe no MP.
+    await prisma.cobranca.updateMany({ where: { id: cobranca.id, status: 'PENDENTE' }, data: { status: 'REJEITADA' } });
     return NextResponse.json({ error: 'Falha ao gerar cobrança PIX. Tente novamente.' }, { status: 502 });
   }
 }

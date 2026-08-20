@@ -32,6 +32,17 @@ export async function POST(req: NextRequest) {
       logError('webhooks.mercadopago', `Pagamento aprovado NAO concedeu acesso: ${resultado.motivo}`, undefined, { dataId, motivo: resultado.motivo });
     }
     logInfo('webhooks.mercadopago', 'Webhook processado', { dataId, status: pagamento.status, ...resultado });
+
+    // Pagamento APROVADO cuja cobrança ainda não existe no banco: a rota de
+    // cartão captura no gateway e só depois grava o mpPaymentId — o webhook
+    // pode chegar nessa janela. Responder 200 aqui queimaria a única entrega
+    // do MP e o cliente ficaria pago e sem acesso caso a rota morresse antes
+    // de gravar. 409 faz o MP reentregar com backoff; a 2ª entrega encontra a
+    // linha e o CAS concede exatamente uma vez.
+    if (!resultado.processado && pagamento.status === 'approved' && resultado.motivo === 'cobranca_nao_encontrada') {
+      return NextResponse.json({ error: 'Cobranca ainda nao reconciliada — reentregar' }, { status: 409 });
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     logError('webhooks.mercadopago', `Falha ao processar webhook do pagamento ${dataId}`, err as Error);

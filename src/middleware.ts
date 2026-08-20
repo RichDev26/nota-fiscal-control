@@ -30,13 +30,30 @@ function isPublic(pathname: string): boolean {
   return false;
 }
 
+/**
+ * Propaga o pathname para os Server Components via header de REQUISIÇÃO.
+ *
+ * SEGURANÇA: `NextResponse.next({ request: { headers } })` é o mecanismo
+ * documentado para passar dado do middleware ao RSC. Setar em `res.headers`
+ * afeta só a RESPOSTA, então em tese `headers()` num RSC poderia acabar lendo
+ * um `X-Pathname` forjado pelo cliente e fazer o AssinaturaGate tratar a rota
+ * como pública. Na prática NÃO consegui reproduzir esse bypass com a forma
+ * antiga (o gate bloqueou nos dois casos), mas esta é a forma correta e o
+ * delete abaixo descarta qualquer valor de entrada antes de escrever o nosso —
+ * defesa em profundidade, custo zero.
+ */
+function comPathname(req: NextRequest, pathname: string): NextResponse {
+  const headers = new Headers(req.headers);
+  headers.delete('x-pathname');
+  headers.set('x-pathname', pathname);
+  return NextResponse.next({ request: { headers } });
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (isPublic(pathname)) {
-    const res = NextResponse.next();
-    res.headers.set('x-pathname', pathname);
-    return res;
+    return comPathname(req, pathname);
   }
 
   const session = await getSessionFromRequest(req);
@@ -54,8 +71,7 @@ export async function middleware(req: NextRequest) {
 
   // Sliding window: renovar token se restar menos de 15 dias
   const token = req.cookies.get(COOKIE_NAME)?.value;
-  const res   = NextResponse.next();
-  res.headers.set('x-pathname', pathname);
+  const res   = comPathname(req, pathname);
   if (token) {
     try {
       const { exp } = JSON.parse(atob(token.split('.')[1]));

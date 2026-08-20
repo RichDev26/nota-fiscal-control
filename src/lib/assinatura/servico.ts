@@ -140,8 +140,11 @@ export async function processarPagamentoAprovado(
       // ConflitoConcorrencia = optimistic lock perdido (nosso). P2034 = write
       // conflict/deadlock que o próprio Postgres detectou. Ambos são
       // transitórios: vale a pena refazer a transação do zero.
-      const isP2034 = typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2034';
-      if (err instanceof ConflitoConcorrencia || isP2034) {
+      // P2028 = timeout da transação interativa (o vencedor do lock demorou).
+      // Igualmente transitório: refazer é melhor que devolver 500 ao cliente.
+      const code = typeof err === 'object' && err !== null ? (err as { code?: string }).code : undefined;
+      const transitorio = code === 'P2034' || code === 'P2028';
+      if (err instanceof ConflitoConcorrencia || transitorio) {
         if (tentativa < 2) await sleep(10 * (tentativa + 1)); // pequeno backoff: não bater de novo na mesma linha instantaneamente (só se houver próxima tentativa)
         continue;
       }
