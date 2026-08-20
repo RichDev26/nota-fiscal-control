@@ -2,32 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { validarCpfCnpj } from '@/lib/validators';
+import { validarCpfCnpj, maskCpfCnpj } from '@/lib/validators';
 import { VALOR_ASSINATURA_FORMATADO } from '@/lib/assinatura/config';
+import FormularioCartao from './FormularioCartao';
 
 interface Props {
   motivo: 'trial_expirado' | 'assinatura_vencida';
 }
 
-/** Máscara progressiva enquanto o usuário digita: CPF (até 11 dígitos) ou CNPJ (12-14). */
-function maskCpfCnpj(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 14);
-  if (digits.length <= 11) {
-    return digits
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-  }
-  return digits
-    .replace(/(\d{2})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1/$2')
-    .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
-}
-
 export default function TelaBloqueio({ motivo }: Props) {
   const router = useRouter();
-  const [etapa, setEtapa]                   = useState<'inicial' | 'checkout' | 'qrcode'>('inicial');
+  const [etapa, setEtapa]                   = useState<'inicial' | 'checkout' | 'qrcode' | 'cartao'>('inicial');
   const [cpfCnpj, setCpfCnpj]               = useState('');
   const [erro, setErro]                     = useState('');
   const [carregando, setCarregando]         = useState(false);
@@ -116,9 +101,34 @@ export default function TelaBloqueio({ motivo }: Props) {
               disabled={carregando}
               className="w-full bg-blue-600 text-white font-semibold rounded-xl py-3 disabled:opacity-50"
             >
-              {carregando ? 'Gerando...' : textoBotao}
+              {carregando ? 'Gerando...' : `${textoBotao} com PIX`}
             </button>
-            <p className="text-gray-400 text-xs mt-4">Pagamento via PIX · confirmação automática</p>
+            <p className="text-gray-400 text-xs mt-4 mb-4">Pagamento via PIX · confirmação automática</p>
+            <button
+              type="button"
+              onClick={() => setEtapa('cartao')}
+              className="w-full border border-gray-200 text-gray-700 font-semibold rounded-xl py-3 hover:bg-gray-50"
+            >
+              Pagar com cartão
+            </button>
+          </div>
+        )}
+
+        {/* ── Etapa cartão: tokenização no cliente, decisão sempre do backend ── */}
+        {etapa === 'cartao' && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setEtapa('inicial')}
+              className="text-gray-400 text-sm mb-4 hover:text-gray-600"
+            >
+              ← Voltar
+            </button>
+            <h1 className="text-xl font-bold text-gray-900 mb-1 text-center">Pagar com cartão</h1>
+            <p className="text-gray-500 text-sm mb-6 text-center">
+              Assinatura de {VALOR_ASSINATURA_FORMATADO}/mês.
+            </p>
+            <FormularioCartao onAprovado={() => router.refresh()} />
           </div>
         )}
 
