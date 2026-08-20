@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
 
   let body: { cpfCnpj?: string; planoId?: string };
   try { body = await req.json(); } catch { body = {}; }
+  if (!body || typeof body !== 'object') body = {};
 
   const plano = resolverPlano(body.planoId ?? 'mensal');
   if (!plano) return NextResponse.json({ error: 'Plano inválido.' }, { status: 400 });
@@ -35,6 +36,18 @@ export async function POST(req: NextRequest) {
   const assinatura = await prisma.assinatura.findUnique({ where: { usuarioId: usuario.id } });
   if (!assinatura) return NextResponse.json({ error: 'Assinatura não encontrada' }, { status: 404 });
 
+  // Rate limit por usuário — chave própria (não compartilhada com o cartão) e
+  // verificado antes de criar a cobrança: toda validação acima já passou,
+  // então só tentativas que de fato chegariam perto do gateway consomem o
+  // orçamento, e uma requisição barrada por 429 não deixa linha PENDENTE no banco.
+  const rl = checkPagamentoRateLimit(`pix:${session.sub}`);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Muitas tentativas de pagamento. Aguarde ${Math.ceil(rl.retryAfter / 60)} minuto(s).` },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    );
+  }
+
   const idempotencyKey = randomUUID();
   const cobranca = await prisma.cobranca.create({
     data: {
@@ -46,17 +59,6 @@ export async function POST(req: NextRequest) {
       idempotencyKey,
     },
   });
-
-  // Rate limit por usuário — chave própria (não compartilhada com o cartão) e
-  // verificado só agora, imediatamente antes do gateway: toda validação acima
-  // já passou, então só tentativas que de fato alcançam o gateway consomem o orçamento.
-  const rl = checkPagamentoRateLimit(`pix:${session.sub}`);
-  if (!rl.allowed) {
-    return NextResponse.json(
-      { error: `Muitas tentativas de pagamento. Aguarde ${Math.ceil(rl.retryAfter / 60)} minuto(s).` },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
-    );
-  }
 
   try {
     const resultado = await criarCobrancaPix({

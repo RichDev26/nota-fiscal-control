@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'crypto';
 import { getSession } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { validarCpfCnpj } from '@/lib/validators';
@@ -35,6 +34,7 @@ export async function POST(req: NextRequest) {
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { body = {}; }
+  if (!body || typeof body !== 'object') body = {};
 
   // ── Plano: preço/moeda/duração vêm do servidor, nunca do cliente ──
   const plano = resolverPlano(body.planoId ?? 'mensal');
@@ -83,6 +83,8 @@ export async function POST(req: NextRequest) {
   // menos de 2min, ainda PROCESSANDO) para esta assinatura, recusa uma nova.
   // Sem isto, um retry na UI com token de cartão fresco gera uma nova cobrança
   // por tentativa — e cada aprovação concede outro período de acesso.
+  // Fast path (não-atômico): resolve o caso comum sem tocar no unique
+  // constraint. O guard real contra corrida está no idempotencyKey abaixo.
   const emVoo = await prisma.cobranca.findFirst({
     where: { assinaturaId: assinatura.id, status: 'PROCESSANDO', createdAt: { gt: new Date(Date.now() - 120_000) } },
   });
@@ -93,32 +95,55 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Cobrança criada ANTES da chamada ao gateway: garante que todo pagamento
-  // tenha registro local, mesmo se o processo cair no meio.
-  const idempotencyKey = randomUUID();
-  const cobranca = await prisma.cobranca.create({
-    data: {
-      assinaturaId: assinatura.id,
-      metodo:       'CARTAO',
-      planoId:      plano.id,
-      valor:        plano.valor,
-      moeda:        plano.moeda,
-      status:       'PROCESSANDO',
-      parcelas:     installments,
-      idempotencyKey,
-    },
-  });
-
   // Rate limit por usuário (session.sub — nunca algo influenciável pelo cliente) —
   // anti card testing. Chave própria (não compartilhada com PIX) e verificado só
-  // agora, imediatamente antes do gateway: toda validação acima já passou, então
-  // só tentativas que de fato alcançam o gateway consomem o orçamento.
+  // agora, imediatamente antes de criar a cobrança: toda validação acima já
+  // passou, então só tentativas que de fato chegariam perto do gateway
+  // consomem o orçamento, e uma requisição barrada por 429 não deixa linha no banco.
   const rl = checkPagamentoRateLimit(`cartao:${session.sub}`);
   if (!rl.allowed) {
     return NextResponse.json(
       { aprovado: false, mensagem: `Muitas tentativas de pagamento. Aguarde ${Math.ceil(rl.retryAfter / 60)} minuto(s) e tente novamente.` },
       { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
     );
+  }
+
+  // Cobrança criada ANTES da chamada ao gateway: garante que todo pagamento
+  // tenha registro local, mesmo se o processo cair no meio.
+  //
+  // Chave determinística por assinatura + janela de 2 min (em vez de um UUID
+  // aleatório): dois cliques simultâneos no botão de pagar (ou duas abas)
+  // geram a MESMA chave, então o unique constraint em idempotencyKey deixa
+  // só um create passar — o outro cai no catch abaixo com P2002. Essa mesma
+  // chave também é enviada ao Mercado Pago como X-Idempotency-Key, então
+  // ganhamos de graça a idempotência do próprio gateway. Residual: duas
+  // requisições a cavaleiro de uma fronteira de bucket ainda escapam do
+  // unique local — mas a idempotência do MP sobre o mesmo token de cartão
+  // cobre o caso comum, e a janela cai de "qualquer concorrência" para um
+  // instante específico de poucos milissegundos.
+  const idempotencyKey = `cartao:${assinatura.id}:${Math.floor(Date.now() / 120_000)}`;
+  let cobranca;
+  try {
+    cobranca = await prisma.cobranca.create({
+      data: {
+        assinaturaId: assinatura.id,
+        metodo:       'CARTAO',
+        planoId:      plano.id,
+        valor:        plano.valor,
+        moeda:        plano.moeda,
+        status:       'PROCESSANDO',
+        parcelas:     installments,
+        idempotencyKey,
+      },
+    });
+  } catch (e) {
+    if ((e as { code?: string }).code === 'P2002') {
+      return NextResponse.json(
+        { aprovado: false, mensagem: 'Já existe um pagamento em processamento. Aguarde alguns instantes antes de tentar novamente.' },
+        { status: 409 },
+      );
+    }
+    throw e;
   }
 
   let pagamento;
@@ -217,7 +242,17 @@ export async function POST(req: NextRequest) {
       pagamento.status === 'cancelled' ? 'CANCELADA' :
       'PENDENTE';
 
-    await prisma.cobranca.update({ where: { id: cobranca.id }, data: { status: statusFinal } });
+    // Write CONDICIONAL: só avança se a linha ainda estiver PROCESSANDO (ou
+    // seja, ainda é "nossa" para mover). Sem esta guarda, um write
+    // incondicional poderia sobrescrever um APROVADA que o webhook do MESMO
+    // pagamento já tenha aplicado via CAS (processarPagamentoAprovado) na
+    // janela entre aquele CAS e este ponto — voltando a cobrança para
+    // PENDENTE e deixando o próximo delivery do webhook rodar o CAS de novo,
+    // concedendo um segundo período de acesso de graça.
+    await prisma.cobranca.updateMany({
+      where: { id: cobranca.id, status: 'PROCESSANDO' },
+      data: { status: statusFinal },
+    });
 
     return NextResponse.json({
       aprovado: false,
@@ -225,13 +260,26 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     // Qualquer exceção daqui em diante acontece DEPOIS da captura no gateway
-    // (pool esgotado, lock do SQLite, blip de conexão...). O cartão já pode
-    // ter sido debitado — nunca deixar isto virar um 500 genérico que convide
-    // a tentar de novo. Loga cobrancaId + mpPaymentId juntos para a cobrança
-    // ser sempre reconciliável a partir dos logs, mesmo que mpPaymentId não
-    // tenha sido persistido no banco por causa deste mesmo erro.
+    // (pool esgotado, lock do SQLite, blip de conexão...). Loga cobrancaId +
+    // mpPaymentId juntos para a cobrança ser sempre reconciliável a partir
+    // dos logs, mesmo que mpPaymentId não tenha sido persistido no banco por
+    // causa deste mesmo erro.
+    //
+    // A mensagem NÃO pode ser a mesma em todo caminho: se o gateway não
+    // capturou (ex.: cartão recusado) e o erro só aconteceu na escrita local
+    // do status final, dizer "pagamento recebido, não tente de novo" mente
+    // para um cliente que não pagou nada e o deixa sem meio de tentar de
+    // novo. Só quando sabemos que o MP aprovou é seguro (e necessário) travar
+    // o retry — e nesse caso o status HTTP também muda para 202: uma falha
+    // interna depois de uma captura real não pode passar por um 200
+    // silencioso, senão fica invisível para alertas de 4xx/5xx.
     logError('assinatura.cartao', `Falha pós-captura ao processar pagamento com cartão (cobranca ${cobranca.id})`, err as Error,
       { cobrancaId: cobranca.id, mpPaymentId: pagamento.mpPaymentId });
-    return NextResponse.json({ aprovado: false, mensagem: MSG_EM_VERIFICACAO });
+    return NextResponse.json({
+      aprovado: false,
+      mensagem: pagamento.status === 'approved'
+        ? MSG_EM_VERIFICACAO
+        : mensagemErroCartao(pagamento.status, pagamento.statusDetail),
+    }, { status: pagamento.status === 'approved' ? 202 : 200 });
   }
 }
