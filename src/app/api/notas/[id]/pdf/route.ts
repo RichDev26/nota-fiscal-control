@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getPdf } from '@/lib/pdf-storage';
 import { getSession } from '@/lib/auth';
+import { verificarAcessoAssinatura } from '@/lib/assinatura/acesso';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,11 @@ export async function GET(
 ) {
   const session = await getSession();
   if (!session) return new NextResponse('Não autorizado', { status: 401 });
+  try {
+    await verificarAcessoAssinatura(session.sub);
+  } catch {
+    return new NextResponse('Assinatura inativa ou trial expirado.', { status: 402 });
+  }
 
   try {
     const nota = await prisma.notaFiscal.findUnique({
