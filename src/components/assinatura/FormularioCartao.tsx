@@ -101,7 +101,10 @@ interface Props { onAprovado: () => void }
 // 'bloqueado': HTTP 202 (dinheiro capturado, nosso pós-write falhou) — terminal,
 // sem botão de retry, para nunca cobrar duas vezes.
 // 'sessao_expirada': 401 do middleware — não é recusa de pagamento.
-type Estado = 'carregando_sdk' | 'montando_form' | 'pronto' | 'processando' | 'erro' | 'bloqueado' | 'sessao_expirada';
+// 'falha_conexao': fetch lançou (rede caiu) — backend pode já ter capturado
+// a cobrança sem a resposta chegar até nós. Terminal, sem retry direto, para
+// nunca cobrar duas vezes em cima de um status que não conhecemos.
+type Estado = 'carregando_sdk' | 'montando_form' | 'pronto' | 'processando' | 'erro' | 'bloqueado' | 'sessao_expirada' | 'falha_conexao';
 
 const FORM_ID = 'form-cartao';
 const ID = (campo: string) => `${FORM_ID}__${campo}`;
@@ -140,9 +143,10 @@ export default function FormularioCartao({ onAprovado }: Props) {
       });
     } catch {
       // Falha de rede: o pagamento PODE ter sido processado. Nunca assumir
-      // sucesso nem falha — orientar o usuário a verificar antes de tentar de novo.
-      setErro('Não foi possível confirmar o pagamento. Atualize a página antes de tentar de novo.');
-      setEstado('pronto');
+      // sucesso nem falha — estado terminal, sem form/botão habilitado, para
+      // não convidar um retry às cegas em cima de uma cobrança já capturada.
+      setErro('Não foi possível confirmar o pagamento. Ele PODE ter sido processado. Recarregue a página para verificar antes de tentar novamente.');
+      setEstado('falha_conexao');
       enviandoRef.current = false;
       return;
     }
@@ -160,7 +164,7 @@ export default function FormularioCartao({ onAprovado }: Props) {
     try { d = await r.json(); } catch { /* corpo vazio/ inválido: trata como falha genérica abaixo */ }
 
     // ÚNICO caminho de sucesso do componente: o backend afirmou aprovado.
-    if (r.ok && d.aprovado === true) { onAprovado(); return; }
+    if (r.ok && d.aprovado === true) { enviandoRef.current = false; onAprovado(); return; }
 
     // HTTP 202: dinheiro capturado, nosso registro pós-captura falhou. Terminal —
     // NUNCA oferecer retry (cobraria de novo em cima de quem já pagou).
@@ -191,7 +195,11 @@ export default function FormularioCartao({ onAprovado }: Props) {
       setEstado('montando_form'); // libera a renderização do <form> para o SDK montar em cima dele
     };
 
-    if (existente) { if (window.MercadoPago) init(); else existente.addEventListener('load', init); return; }
+    if (existente) {
+      if (window.MercadoPago) { init(); return; }
+      existente.addEventListener('load', init);
+      return () => existente.removeEventListener('load', init);
+    }
 
     const script = document.createElement('script');
     script.src = 'https://sdk.mercadopago.com/js/v2';
@@ -200,6 +208,11 @@ export default function FormularioCartao({ onAprovado }: Props) {
     script.onload = init;
     script.onerror = () => { setEstado('erro'); setErro('Não foi possível carregar o formulário de pagamento.'); };
     document.body.appendChild(script);
+
+    // Cleanup: só remove o listener que este mount registrou — o <script>
+    // é intencionalmente compartilhado/de-duplicado via data-mp-sdk e outros
+    // mounts podem depender dele, então ele nunca é removido aqui.
+    return () => { script.onload = null; };
   }, []);
 
   // Só depois que o <form id="form-cartao"> (com todos os campos mapeados)
@@ -270,7 +283,7 @@ export default function FormularioCartao({ onAprovado }: Props) {
     return <p className="text-gray-700 text-sm text-center py-6">{erro}</p>;
   }
 
-  if (estado === 'sessao_expirada') {
+  if (estado === 'sessao_expirada' || estado === 'falha_conexao') {
     return (
       <div className="text-center py-6">
         <p className="text-red-600 text-sm mb-4">{erro}</p>
