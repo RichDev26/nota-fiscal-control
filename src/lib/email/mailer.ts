@@ -26,6 +26,26 @@ function getTransporter() {
   return transporter;
 }
 
+/**
+ * Testa a conexão e a autenticação SMTP sem enviar nada. Existe porque a causa
+ * mais comum de e-mail que "não chega" é credencial/porta errada, e isso dá
+ * para descobrir sem gastar um envio. Reaproveita exatamente o mesmo
+ * transporter do envio real — testar um caminho diferente do de produção não
+ * provaria nada.
+ */
+export async function verificarSmtp(): Promise<
+  { ok: true } | { ok: false; motivo: 'sem_configuracao' | 'falha'; erro?: string }
+> {
+  const t = getTransporter();
+  if (!t) return { ok: false, motivo: 'sem_configuracao' };
+  try {
+    await t.verify();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, motivo: 'falha', erro: (err as Error).message };
+  }
+}
+
 export interface EnviarEmailInput {
   to: string;
   subject: string;
