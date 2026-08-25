@@ -18,10 +18,20 @@
  *     expirationMonth+expirationYear), securityCode, installments,
  *     identificationType, identificationNumber e issuer — os quatro últimos
  *     documentados como REQUIRED, não opcionais como o esboço presumia.
- *   - cardNumber/expirationDate/securityCode são "MP Fields": o SDK assume
- *     os elementos por id e intercepta o valor real, que nunca fica
- *     acessível ao nosso JS/DOM — a mesma garantia de segurança do esboço,
- *     só que via <div> gerenciado pelo SDK em vez de <input> nosso.
+ *   - cardNumber/expirationDate/securityCode precisam ser <input> de verdade.
+ *     Isto foi verificado no navegador contra o SDK real, depois de um bug em
+ *     producao: com <div> o cardForm chama onFormMounted SEM erro e mesmo
+ *     assim nao liga nada no elemento — o usuario ve tres caixas vazias que
+ *     nao aceitam digitacao. Com <input> o mesmo cardForm passa a resolver
+ *     bandeira, emissor e parcelas normalmente.
+ *
+ *     Consequencia de seguranca, explicita: neste modo o numero do cartao
+ *     FICA no DOM da nossa pagina enquanto o usuario digita. O que continua
+ *     valendo e que nosso codigo nunca le esse valor e o backend so recebe o
+ *     token — nenhum dado de cartao trafega ou e gravado por nos. Se a
+ *     exigencia for que o PAN nunca toque o nosso DOM, o caminho e trocar
+ *     cardForm por Secure Fields (mp.fields.create(...).mount(div)), que
+ *     renderiza cada campo dentro de um iframe do proprio Mercado Pago.
  *   - Não existe uma função única "tokenizarEEnviar" chamada por onClick: a
  *     tokenização é disparada pelo submit nativo do <form>, e o SDK entrega
  *     o resultado por dois callbacks distintos — `onSubmit` (sucesso: os
@@ -111,6 +121,11 @@ const ID = (campo: string) => `${FORM_ID}__${campo}`;
 
 export default function FormularioCartao({ onAprovado }: Props) {
   const [estado, setEstado]           = useState<Estado>('carregando_sdk');
+
+  // Unica fonte de verdade para "o <form> esta renderizado": usada tanto pelo
+  // JSX quanto pela dependencia do efeito que monta o cardForm, para que os
+  // dois nunca saiam de sincronia.
+  const formNoDom = estado === 'montando_form' || estado === 'pronto' || estado === 'processando';
   const [erro, setErro]               = useState('');
   const [identificacao, setIdentificacao] = useState(''); // CPF/CNPJ digitado no próprio form do cartão
   const mpRef       = useRef<MercadoPagoInstance | null>(null);
@@ -197,6 +212,14 @@ export default function FormularioCartao({ onAprovado }: Props) {
     enviandoRef.current = false;
   }, [onAprovado]);
 
+  // O SDK guarda os callbacks que recebe no cardForm(). Se `submeter` entrasse
+  // no array de dependencias do efeito de montagem, cada nova identidade dele
+  // (o pai passa `onAprovado={() => router.refresh()}`, funcao nova a cada
+  // render) desmontaria e remontaria os campos seguros. Espelhamos em um ref:
+  // o callback le sempre a versao atual sem que o efeito precise re-rodar.
+  const submeterRef = useRef(submeter);
+  useEffect(() => { submeterRef.current = submeter; });
+
   // Enquanto a 1ª fatura da assinatura recorrente não é confirmada, consulta o
   // backend periodicamente. Só o backend decide se há acesso — o componente
   // apenas reage ao que ele responde.
@@ -247,8 +270,17 @@ export default function FormularioCartao({ onAprovado }: Props) {
 
   // Só depois que o <form id="form-cartao"> (com todos os campos mapeados)
   // já está no DOM é que o cardForm pode ser montado em cima dele.
+  //
+  // A dependencia é `formNoDom`, NUNCA `estado`. O motivo é sutil e ja causou
+  // bug em producao: o proprio onFormMounted chama setEstado('pronto'), entao
+  // com `estado` na lista o React rodava o cleanup — unmount() — no mesmo tick
+  // em que o form terminava de montar, e a re-execucao do efeito caía no
+  // early-return. Resultado: campos de cartao vazios e impossiveis de
+  // preencher, com o botao habilitado. `formNoDom` cobre os tres estados em
+  // que o <form> esta renderizado, entao vira true uma vez e so volta a false
+  // quando o form realmente sai da tela.
   useEffect(() => {
-    if (estado !== 'montando_form') return;
+    if (!formNoDom) return;
     if (!mpRef.current || cardFormRef.current) return;
 
     cardFormRef.current = mpRef.current.cardForm({
@@ -289,7 +321,7 @@ export default function FormularioCartao({ onAprovado }: Props) {
             setErro('Não foi possível processar os dados do cartão. Tente novamente.');
             return;
           }
-          submeter({
+          submeterRef.current({
             token: dados.token,
             paymentMethodId: dados.paymentMethodId,
             issuerId: dados.issuerId || undefined,
@@ -303,7 +335,7 @@ export default function FormularioCartao({ onAprovado }: Props) {
     });
 
     return () => { cardFormRef.current?.unmount(); cardFormRef.current = null; };
-  }, [estado, submeter]);
+  }, [formNoDom]);
 
   if (estado === 'erro') {
     return <p className="text-red-600 text-sm text-center py-6">{erro}</p>;
@@ -352,7 +384,7 @@ export default function FormularioCartao({ onAprovado }: Props) {
           Campos sensíveis (cardNumber/expirationDate/securityCode) são "MP
           Fields": o SDK assume esses <div> e o valor real nunca passa pelo
           nosso estado, log ou backend — só o token final. */}
-      {(estado === 'montando_form' || estado === 'pronto' || estado === 'processando') && (
+      {formNoDom && (
         <form id={FORM_ID}>
           <label className="block text-xs font-medium text-gray-500 mb-1">Nome no cartão</label>
           <input
@@ -363,16 +395,37 @@ export default function FormularioCartao({ onAprovado }: Props) {
           />
 
           <label className="block text-xs font-medium text-gray-500 mb-1">Número do cartão</label>
-          <div id={ID('cardNumber')} className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm mb-3" />
+          <input
+            id={ID('cardNumber')}
+            type="text"
+            inputMode="numeric"
+            autoComplete="cc-number"
+            placeholder="0000 0000 0000 0000"
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-3"
+          />
 
           <div className="flex gap-3 mb-3">
             <div className="flex-1">
               <label className="block text-xs font-medium text-gray-500 mb-1">Validade</label>
-              <div id={ID('expirationDate')} className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm" />
+              <input
+                id={ID('expirationDate')}
+                type="text"
+                inputMode="numeric"
+                autoComplete="cc-exp"
+                placeholder="MM/AA"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
             <div className="flex-1">
               <label className="block text-xs font-medium text-gray-500 mb-1">CVV</label>
-              <div id={ID('securityCode')} className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm" />
+              <input
+                id={ID('securityCode')}
+                type="text"
+                inputMode="numeric"
+                autoComplete="cc-csc"
+                placeholder="CVV"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
           </div>
 
