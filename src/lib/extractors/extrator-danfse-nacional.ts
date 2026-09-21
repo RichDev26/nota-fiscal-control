@@ -11,44 +11,7 @@
  */
 import type { PdfExtractResult } from '@/types';
 import { parseNumeroBR } from '@/lib/validators';
-import { stripAccents } from './ocr-normalizer';
-
-// ─── HELPERS INTERNOS ─────────────────────────────────────────────────────────
-
-/** Valor na linha imediatamente após o label. Retorna null para '-' (placeholders). */
-function nextVal(text: string, labelRe: RegExp): string | null {
-  const re = new RegExp(labelRe.source + '[^\\n]*\\n([^\\n]+)', 'i');
-  const m  = text.match(re);
-  const v  = m?.[1]?.trim();
-  return (!v || v === '-') ? null : v;
-}
-
-/** Primeiro valor monetário (R$ NNN,NN) na linha após o label. */
-function nextMoney(text: string, labelRe: RegExp): number | null {
-  const line = nextVal(text, labelRe);
-  if (!line) return null;
-  const m = line.match(/R\$\s*([\d.]+,\d{2})/);
-  return m ? parseNumeroBR('R$ ' + m[1]) : parseNumeroBR(line);
-}
-
-/** Fatia do texto entre dois padrões (primeira ocorrência de cada). */
-function section(text: string, from: RegExp, to: RegExp): string {
-  const start = text.search(from);
-  if (start === -1) return '';
-  const sub = text.slice(start);
-  const end = sub.search(to);
-  return end === -1 ? sub : sub.slice(0, end);
-}
-
-/** "Cidade - UF" ou "Cidade - UF CEP" → { municipio, uf }. */
-function parseMuniUf(raw: string | null): { municipio?: string; uf?: string } {
-  if (!raw) return {};
-  const m = raw.match(/^(.+?)\s*[-–]\s*([A-Z]{2})\b/);
-  return m ? { municipio: m[1].trim(), uf: m[2] } : { municipio: raw.trim() };
-}
-
-const RE_CNPJ = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/;
-const RE_CPF  = /\d{3}\.\d{3}\.\d{3}-\d{2}/;
+import { nextVal, nextMoney, section, parseMuniUf, RE_CNPJ, RE_CPF } from './danfse-comum';
 
 // ─── EXTRAÇÃO ─────────────────────────────────────────────────────────────────
 

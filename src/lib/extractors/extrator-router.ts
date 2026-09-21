@@ -4,6 +4,8 @@
  * Identifica o tipo do documento (detector por múltiplas evidências) e o encaminha
  * para o pipeline correto, mantendo UMA ÚNICA arquitetura de extração:
  *   - DANFE (NF-e mercadorias) → pipeline DANFE especializado
+ *   - NFS-e DANFSe v2.0         → parser v2.0 (blocos IBS/CBS)
+ *   - NFS-e DANFSe v1.0         → parser nacional v1.0
  *   - NFS-e / desconhecido      → pipeline existente (integrador), INALTERADO
  *
  * Preserva integralmente o comportamento de NFS-e: quando não é DANFE com
@@ -17,6 +19,8 @@ import { extractFromPdfBuffer, NotaCanceladaError, verificarNotaCancelada, valid
 import { detectarTipoDocumento, detectarLayoutNfse } from './detector-documento';
 import { extrairDanfeDeTexto } from './extrator-danfe';
 import { extrairDanfseNacional } from './extrator-danfse-nacional';
+import { extrairDanfseV2 } from './extrator-danfse-v2';
+import { extrairTextoComLacunas } from './pdf-texto';
 
 export { NotaCanceladaError };
 
@@ -42,6 +46,21 @@ export async function extractDocumentFromPdfBuffer(pdfBuffer: Buffer): Promise<E
 
   // NFS-e / desconhecido → detectar layout interno
   const layoutNfse = detectarLayoutNfse(parsed.text);
+
+  if (layoutNfse === 'DANFSE_V2') {
+    // O v2.0 é o único layout que precisa da extração com recuperação de
+    // espaços: o PDF não grava caractere de espaço, e sem isso nome, endereço e
+    // descrição saem grudados ("JMINOXMANUTENCAOINDUSTRIALLTDA"). Reparse
+    // localizado, só neste ramo — os demais layouts seguem com o texto padrão,
+    // byte a byte igual ao de antes.
+    const textoV2 = await extrairTextoComLacunas(pdfBuffer);
+    let res = extrairDanfseV2(textoV2);
+    verificarNotaCancelada(res);          // mesmas validações dos outros layouts
+    res = validarDocumentosFiscais(res);
+    res = alertarRetencoesSimples(res);
+    res = validarFatoGerador(res);
+    return { ...res, _roteamento: { tipo: 'DANFSE_V2', scoreDanfe: deteccao.scoreDanfe, scoreNfse: deteccao.scoreNfse, evidencias: deteccao.evidencias } };
+  }
 
   if (layoutNfse === 'DANFSE_NACIONAL') {
     let res = extrairDanfseNacional(parsed.text);

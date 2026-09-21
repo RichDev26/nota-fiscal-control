@@ -284,7 +284,7 @@ export interface PdfExtractResult {
   fontesExtracao?: string[];
   resumo?: string;
   // ── DANFSe Nacional — campos extras (display-only; não salvos no banco) ──────
-  layoutNfse?: 'MUNICIPAL' | 'DANFSE_NACIONAL';
+  layoutNfse?: 'MUNICIPAL' | 'DANFSE_NACIONAL' | 'DANFSE_V2';
   chaveAcessoNfse?: string;
   competenciaNfse?: string;
   numeroDps?: string;
@@ -303,6 +303,49 @@ export interface PdfExtractResult {
   regimeApuracao?: string;
   tributacaoIssqn?: string;
   municipioIncidenciaIssqn?: string;
+  // ── DANFSe v2.0 — aditivo, display-only. Todos opcionais: os layouts
+  //    municipal e v1.0 simplesmente não os preenchem. ──────────────────────────
+  emitenteNfse?: string;
+  finalidadeNfse?: string;
+  prestadorCodigoIbge?: string;
+  tomadorCodigoIbge?: string;
+  ufPrestacao?: string;
+  ufIncidenciaIssqn?: string;
+  paisIncidenciaIssqn?: string;
+  retencaoIssqn?: string;
+  /** Agregado PIS/COFINS/CSLL retidos — NÃO é a CSLL isolada. */
+  contribuicoesSociaisRetidas?: number;
+  descricaoContribSociais?: string;
+  descontoCondicionado?: number;
+  totalRetencoes?: number;
+  totalIbsCbs?: number;
+  valorLiquidoComIbsCbs?: number;
+  /** Bloco IBS/CBS da reforma tributária — só existe no layout v2.0. */
+  ibsCbs?: IbsCbsExtraido;
+}
+
+/** Tributação IBS/CBS do DANFSe v2.0. Campo ausente no documento vira undefined. */
+export interface IbsCbsExtraido {
+  cst?: string;
+  cClassTrib?: string;
+  indicadorOperacao?: string;
+  codigoIbgeIncidencia?: string;
+  municipioIncidencia?: string;
+  ufIncidencia?: string;
+  exclusoesReducoesBc?: number;
+  baseCalculoAposExclusoes?: number;
+  reducaoAliquotaIbs?: string;
+  reducaoAliquotaCbs?: string;
+  aliquotaIbsUf?: string;
+  aliquotaIbsMun?: string;
+  aliquotaEfetivaMunicipalIbs?: string;
+  valorApuradoMunicipalIbs?: number;
+  aliquotaEfetivaEstadualIbs?: string;
+  valorApuradoEstadualIbs?: number;
+  valorTotalApuradoIbs?: number;
+  aliquotaCbs?: string;
+  aliquotaEfetivaCbs?: string;
+  valorTotalApuradoCbs?: number;
 }
 
 export interface StatusAssinatura {

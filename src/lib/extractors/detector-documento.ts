@@ -62,7 +62,47 @@ function pontuar(texto: string, evidencias: Evidencia[]): { score: number; achad
 
 // ─── LAYOUT INTERNO DA NFS-e ──────────────────────────────────────────────────
 
-export type LayoutNfse = 'DANFSE_NACIONAL' | 'MUNICIPAL';
+export type LayoutNfse = 'DANFSE_V2' | 'DANFSE_NACIONAL' | 'MUNICIPAL';
+
+/**
+ * Evidências do DANFSe v2.0 (layout com blocos IBS/CBS da reforma tributária).
+ *
+ * Duas particularidades guiaram estas regexes:
+ *
+ * 1. `\s*` entre as palavras. O PDF do v2.0 costuma sair do pdf-parse com os
+ *    espaços colapsados ("documentoauxiliardanfs-e"). Sem o `\s*` nenhuma
+ *    evidência casaria e o documento cairia no pipeline municipal — foi
+ *    exatamente o que acontecia antes deste detector existir.
+ *
+ * 2. Os sinais fortes são os EXCLUSIVOS do v2.0: o bloco IBS/CBS, `cClassTrib`
+ *    e os rótulos "PRESTADOR / FORNECEDOR" e "TOMADOR / ADQUIRENTE" (o v1.0 usa
+ *    "EMITENTE DA NFS-e" e "TOMADOR DO SERVIÇO"). Rótulos comuns aos dois
+ *    layouts entram com peso baixo, para confirmar — nunca para decidir
+ *    sozinhos.
+ */
+const EV_DANFSE_V2: Evidencia[] = [
+  { re: /danfse\s*v\s*2\.0/,                              peso: 50, nome: 'DANFSe v2.0' },
+  { re: /tributacao\s*ibs\s*\/?\s*cbs/,                   peso: 35, nome: 'Tributação IBS/CBS' },
+  { re: /cclasstrib/,                                     peso: 25, nome: 'cClassTrib' },
+  { re: /prestador\s*\/\s*fornecedor/,                    peso: 25, nome: 'Prestador / Fornecedor' },
+  { re: /tomador\s*\/\s*adquirente/,                      peso: 25, nome: 'Tomador / Adquirente' },
+  { re: /tributacao\s*federal\s*\(?\s*exceto\s*cbs/,      peso: 20, nome: 'Tributação Federal (exceto CBS)' },
+  { re: /valor\s*liquido\s*da\s*nfs-?e\s*\+\s*ibs\s*\/?\s*cbs/, peso: 20, nome: 'Valor Líquido + IBS/CBS' },
+  { re: /indicador\s*municipal\s*\(\s*inscricao/,         peso: 15, nome: 'Indicador Municipal (Inscrição)' },
+  { re: /codigo\s*ibge\s*\/\s*cep/,                       peso: 15, nome: 'Código IBGE / CEP' },
+  // Comuns ao v1.0 — só confirmam.
+  { re: /documento\s*auxiliar\s*da\s*nfs-?e/,             peso: 10, nome: 'Documento Auxiliar da NFS-e' },
+  { re: /chave\s*de\s*acesso\s*da\s*nfs-?e/,              peso: 10, nome: 'Chave de Acesso da NFS-e' },
+  { re: /competencia\s*da\s*nfs-?e/,                      peso: 10, nome: 'Competência da NFS-e' },
+  { re: /numero\s*da\s*dps/,                              peso: 10, nome: 'Número da DPS' },
+  { re: /serie\s*da\s*dps/,                               peso: 10, nome: 'Série da DPS' },
+];
+
+/**
+ * Limiar alto de propósito: exige várias evidências independentes, de modo que
+ * nenhum documento entre no parser v2.0 só por conter "NFS-e" ou "DANFSe".
+ */
+const LIMIAR_DANFSE_V2 = 110;
 
 const EV_DANFSE_NAC: Evidencia[] = [
   { re: /\bdanfse\b/,                                   peso: 50, nome: 'DANFSe' },
@@ -78,11 +118,37 @@ const EV_DANFSE_NAC: Evidencia[] = [
 
 const LIMIAR_DANFSE_NAC = 50;
 
-/** Detecta o layout interno de uma NFS-e já confirmada pelo roteador. */
-export function detectarLayoutNfse(rawText: string): LayoutNfse {
+/** Diagnóstico da escolha de layout — usado pelo roteador e pelos testes. */
+export interface DeteccaoLayoutNfse {
+  layout:      LayoutNfse;
+  scoreV2:     number;
+  scoreV1:     number;
+  evidenciasV2: string[];
+  evidenciasV1: string[];
+}
+
+/**
+ * Detecta o layout interno de uma NFS-e já confirmada pelo roteador.
+ *
+ * O v2.0 é testado ANTES do v1.0 porque o v2.0 também contém os rótulos
+ * genéricos do v1.0 ("DANFSe", "Chave de Acesso da NFS-e"…) — invertendo a
+ * ordem, todo v2.0 seria classificado como v1.0 e extraído pelo parser errado.
+ */
+export function detectarLayoutNfseDetalhado(rawText: string): DeteccaoLayoutNfse {
   const texto = stripAccents(rawText).toLowerCase();
-  const { score } = pontuar(texto, EV_DANFSE_NAC);
-  return score >= LIMIAR_DANFSE_NAC ? 'DANFSE_NACIONAL' : 'MUNICIPAL';
+  const v2 = pontuar(texto, EV_DANFSE_V2);
+  const v1 = pontuar(texto, EV_DANFSE_NAC);
+
+  const layout: LayoutNfse =
+    v2.score >= LIMIAR_DANFSE_V2  ? 'DANFSE_V2'
+    : v1.score >= LIMIAR_DANFSE_NAC ? 'DANFSE_NACIONAL'
+    : 'MUNICIPAL';
+
+  return { layout, scoreV2: v2.score, scoreV1: v1.score, evidenciasV2: v2.achadas, evidenciasV1: v1.achadas };
+}
+
+export function detectarLayoutNfse(rawText: string): LayoutNfse {
+  return detectarLayoutNfseDetalhado(rawText).layout;
 }
 
 export function detectarTipoDocumento(rawText: string): DeteccaoResult {
